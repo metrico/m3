@@ -30,20 +30,13 @@ import (
 	xtime "github.com/m3db/m3/src/x/time"
 )
 
-// HostBlockMetadata contains a host along with block metadata from that host
-type HostBlockMetadata struct {
-	Host     topology.Host
-	Size     int64
-	Checksum *uint32
-}
-
 // HostBlockMetadataSlice captures a slice of hostBlockMetadata
 type HostBlockMetadataSlice interface {
 	// Add adds the metadata to the slice
-	Add(metadata HostBlockMetadata)
+	Add(metadata block.ReplicaMetadata)
 
 	// Metadata returns the metadata slice
-	Metadata() []HostBlockMetadata
+	Metadata() []block.ReplicaMetadata
 
 	// Reset resets the metadata slice
 	Reset()
@@ -67,10 +60,10 @@ type ReplicaBlockMetadata interface {
 	Start() time.Time
 
 	// Metadata returns the metadata from all hosts
-	Metadata() []HostBlockMetadata
+	Metadata() []block.ReplicaMetadata
 
 	// Add adds a metadata from a host
-	Add(metadata HostBlockMetadata)
+	Add(metadata block.ReplicaMetadata)
 
 	// Close performs cleanup
 	Close()

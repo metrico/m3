@@ -90,6 +90,7 @@ func (r shardRepairer) Options() repair.Options {
 func (r shardRepairer) Repair(
 	ctx context.Context,
 	nsCtx namespace.Context,
+	nsMeta namespace.Metadata,
 	tr xtime.Range,
 	shard databaseShard,
 ) (repair.MetadataComparisonResult, error) {
@@ -171,7 +172,42 @@ func (r shardRepairer) Repair(
 		return repair.MetadataComparisonResult{}, err
 	}
 
+	// TODO(rartoul): May want to do some custom iteration here to make pooling easier.
+	// or pool this slice?
+	metadatas := []block.ReplicaMetadata{}
 	metadataRes := metadata.Compare()
+	for _, e := range metadataRes.ChecksumDifferences.Series().Iter() {
+		// TODO(rartoul): Make sure the lifecycles here are fine (getting loaded into the series
+		// / finalization and all that).
+		for _, replicaMetadata := range e.Value().Metadata.Blocks() {
+			// TODO(rartoul): check block starts and if they're wrong emit some debug log.
+			metadatas = append(metadatas, replicaMetadata.Metadata()...)
+		}
+	}
+
+	// fmt.Println(metadatas)
+	resultOpts := result.NewOptions()
+	perSeriesReplicaIter, err := session.FetchBlocksFromPeers(nsMeta, shard.ID(), level, metadatas, resultOpts)
+	if err != nil {
+		return repair.MetadataComparisonResult{}, err
+	}
+
+	// TODO(rartoul): Either inject a KeyCopyPool or use SetUnsafe if we determine
+	// the lifecycle of IDs is acceptable.
+	// TODO: capacity estimate?
+	// TODO: Need to use existing result options not create new ones to take advantage of pools.
+	results := result.NewShardResult(0, result.NewOptions())
+	for perSeriesReplicaIter.Next() {
+		_, id, block := perSeriesReplicaIter.Current()
+		// TODO: Fill in tags somehow.
+		results.AddBlock(id, ident.Tags{}, block)
+		// TODO(rartoul): TODO.
+	}
+
+	// TODO(rartoul): Make load accept an interface that seriesIter can implement (maybe?).
+	if err := shard.Load(results.AllSeries()); err != nil {
+		return repair.MetadataComparisonResult{}, err
+	}
 
 	r.recordFn(nsCtx.ID, shard, metadataRes)
 

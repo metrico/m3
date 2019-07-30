@@ -278,25 +278,28 @@ func TestDatabaseShardRepairerRepair(t *testing.T) {
 	shard.EXPECT().ID().Return(shardID).AnyTimes()
 
 	peerIter := client.NewMockPeerBlockMetadataIter(ctrl)
-	inputBlocks := []struct {
-		host topology.Host
-		meta block.Metadata
-	}{
-		{topology.NewHost("1", "addr1"), block.NewMetadata(ident.StringID("foo"), ident.Tags{},
-			now.Add(30*time.Minute), sizes[0], &checksums[0], lastRead)},
-		{topology.NewHost("1", "addr1"), block.NewMetadata(ident.StringID("foo"), ident.Tags{},
-			now.Add(time.Hour), sizes[0], &checksums[1], lastRead)},
-		{topology.NewHost("1", "addr1"), block.NewMetadata(ident.StringID("bar"), ident.Tags{},
-			now.Add(30*time.Minute), sizes[2], &checksums[2], lastRead)},
+	inputBlocks := []block.ReplicaMetadata{
+		{
+			Host:     topology.NewHost("1", "addr1"),
+			Metadata: block.NewMetadata(ident.StringID("foo"), ident.Tags{}, now.Add(30*time.Minute), sizes[0], &checksums[0], lastRead),
+		},
+		{
+			Host:     topology.NewHost("1", "addr1"),
+			Metadata: block.NewMetadata(ident.StringID("foo"), ident.Tags{}, now.Add(time.Hour), sizes[0], &checksums[1], lastRead),
+		},
+		{
+			Host:     topology.NewHost("1", "addr1"),
+			Metadata: block.NewMetadata(ident.StringID("bar"), ident.Tags{}, now.Add(30*time.Minute), sizes[2], &checksums[2], lastRead),
+		},
 	}
 
 	gomock.InOrder(
 		peerIter.EXPECT().Next().Return(true),
-		peerIter.EXPECT().Current().Return(inputBlocks[0].host, inputBlocks[0].meta),
+		peerIter.EXPECT().Current().Return(inputBlocks[0].Host, inputBlocks[0].Metadata),
 		peerIter.EXPECT().Next().Return(true),
-		peerIter.EXPECT().Current().Return(inputBlocks[1].host, inputBlocks[1].meta),
+		peerIter.EXPECT().Current().Return(inputBlocks[1].Host, inputBlocks[1].Metadata),
 		peerIter.EXPECT().Next().Return(true),
-		peerIter.EXPECT().Current().Return(inputBlocks[2].host, inputBlocks[2].meta),
+		peerIter.EXPECT().Current().Return(inputBlocks[2].Host, inputBlocks[2].Metadata),
 		peerIter.EXPECT().Next().Return(false),
 		peerIter.EXPECT().Err().Return(nil),
 	)
@@ -319,28 +322,35 @@ func TestDatabaseShardRepairerRepair(t *testing.T) {
 		resDiff = diffRes
 	}
 
-	ctx := context.NewContext()
-	nsCtx := namespace.Context{ID: namespaceID}
-	repairer.Repair(ctx, nsCtx, repairTimeRange, shard)
+	var (
+		ctx   = context.NewContext()
+		nsCtx = namespace.Context{ID: namespaceID}
+	)
+	nsMeta, err := namespace.NewMetadata(namespaceID, namespace.NewOptions())
+	require.NoError(t, err)
+	repairer.Repair(ctx, nsCtx, nsMeta, repairTimeRange, shard)
+
 	require.Equal(t, namespaceID, resNamespace)
 	require.Equal(t, resShard, shard)
 	require.Equal(t, int64(2), resDiff.NumSeries)
 	require.Equal(t, int64(3), resDiff.NumBlocks)
 	require.Equal(t, 0, resDiff.ChecksumDifferences.Series().Len())
+
 	sizeDiffSeries := resDiff.SizeDifferences.Series()
 	require.Equal(t, 1, sizeDiffSeries.Len())
 	series, exists := sizeDiffSeries.Get(ident.StringID("foo"))
 	require.True(t, exists)
 	blocks := series.Metadata.Blocks()
 	require.Equal(t, 1, len(blocks))
-	block, exists := blocks[xtime.ToUnixNano(now.Add(time.Hour))]
+	currBlock, exists := blocks[xtime.ToUnixNano(now.Add(time.Hour))]
 	require.True(t, exists)
-	require.Equal(t, now.Add(time.Hour), block.Start())
-	expected := []repair.HostBlockMetadata{
-		{Host: topology.NewHost("0", "addr0"), Size: sizes[1], Checksum: &checksums[1]},
-		{Host: topology.NewHost("1", "addr1"), Size: sizes[0], Checksum: &checksums[1]},
+	require.Equal(t, now.Add(time.Hour), currBlock.Start())
+	expected := []block.ReplicaMetadata{
+		// Size difference for series "foo".
+		{Host: topology.NewHost("0", "addr0"), Metadata: block.NewMetadata(ident.StringID("foo"), ident.Tags{}, now.Add(time.Hour), sizes[1], &checksums[1], lastRead)},
+		{Host: topology.NewHost("1", "addr1"), Metadata: inputBlocks[2].Metadata},
 	}
-	require.Equal(t, expected, block.Metadata())
+	require.Equal(t, expected, currBlock.Metadata())
 }
 
 func TestRepairerRepairTimes(t *testing.T) {
