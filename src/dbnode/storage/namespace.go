@@ -1216,7 +1216,6 @@ func (n *dbNamespace) Repair(
 	tr xtime.Range,
 ) error {
 	if !n.nopts.RepairEnabled() {
-		panic("namespace repairs not enabled!")
 		return nil
 	}
 

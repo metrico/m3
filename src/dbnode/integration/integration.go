@@ -306,9 +306,9 @@ func newDefaultBootstrappableTestSetups(
 						SetRepairThrottle(time.Second).
 						SetRepairCheckInterval(time.Second).
 						SetAdminClient(adminClient).
-						// Increases log spam but helps with debugging integration tests.
-						SetDebugShadowComparisonsEnabled(true).
-						SetDebugShadowComparisonsPercentage(1.0))
+						SetDebugShadowComparisonsPercentage(1.0).
+						// Avoid log spam.
+						SetDebugShadowComparisonsEnabled(true))
 		}
 
 		setups = append(setups, setup)

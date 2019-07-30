@@ -539,22 +539,9 @@ func (s *service) readDatapoints(
 	}
 
 	// Resolve all futures and filter out any empty segments.
-	filteredBlockReaderSliceOfSlices := encoded[:0]
-	for i := range encoded {
-		filteredBlockReaders := encoded[i][:0]
-		for _, bReader := range encoded[i] {
-			seg, err := bReader.Segment()
-			if err != nil {
-				return nil, err
-			}
-			if seg.Head == nil && seg.Tail == nil {
-				continue
-			}
-			filteredBlockReaders = append(filteredBlockReaders, bReader)
-		}
-		if len(filteredBlockReaders) > 0 {
-			filteredBlockReaderSliceOfSlices = append(filteredBlockReaderSliceOfSlices, filteredBlockReaders)
-		}
+	filteredBlockReaderSliceOfSlices, err := xio.FilterEmptyBlockReadersInPlaceSliceOfSlices(encoded)
+	if err != nil {
+		return nil, err
 	}
 
 	// Make datapoints an initialized empty array for JSON serialization as empty array than null

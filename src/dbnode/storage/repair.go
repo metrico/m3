@@ -580,10 +580,15 @@ func (r shardRepairer) shadowCompare(
 		tmpCtx.Reset()
 		defer tmpCtx.BlockingClose()
 
-		localSeriesDataBlocks, err := shard.ReadEncoded(tmpCtx, seriesID, start, end, nsCtx)
+		unfilteredLocalSeriesDataBlocks, err := shard.ReadEncoded(tmpCtx, seriesID, start, end, nsCtx)
 		if err != nil {
 			return err
 		}
+		localSeriesDataBlocks, err := xio.FilterEmptyBlockReadersInPlaceSliceOfSlices(unfilteredLocalSeriesDataBlocks)
+		if err != nil {
+			return err
+		}
+
 		localSeriesSliceOfSlices := xio.NewReaderSliceOfSlicesFromBlockReadersIterator(localSeriesDataBlocks)
 		localSeriesIter := r.opts.MultiReaderIteratorPool().Get()
 		localSeriesIter.ResetSliceOfSlices(localSeriesSliceOfSlices, nsCtx.Schema)
