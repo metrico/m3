@@ -59,7 +59,7 @@ func TestRepair(t *testing.T) {
 	setupOpts := []bootstrappableTestSetupOptions{
 		{disablePeersBootstrapper: true, enableRepairs: true},
 		{disablePeersBootstrapper: true, enableRepairs: true},
-		{disablePeersBootstrapper: true, enableRepairs: false},
+		{disablePeersBootstrapper: true, enableRepairs: true},
 	}
 	setups, closeFn := newDefaultBootstrappableTestSetups(t, opts, setupOpts)
 	defer closeFn()
@@ -138,12 +138,12 @@ func TestRepair(t *testing.T) {
 	log.Debug("servers are now up")
 
 	// Stop the servers
-	// defer func() {
-	// 	setups.parallel(func(s *testSetup) {
-	// 		require.NoError(t, s.stopServer())
-	// 	})
-	// 	log.Debug("servers are now down")
-	// }()
+	defer func() {
+		setups.parallel(func(s *testSetup) {
+			require.NoError(t, s.stopServer())
+		})
+		log.Debug("servers are now down")
+	}()
 
 	for _, s := range setups {
 		s.setNowFn(s.getNowFn().Add(time.Minute))
@@ -154,5 +154,5 @@ func TestRepair(t *testing.T) {
 	verifySeriesMaps(t, setups[1], namesp.ID(), allData)
 
 	fmt.Println("^^^^^^^^^^^^^^")
-	// verifySeriesMaps(t, setups[2], namesp.ID(), seriesMaps)
+	verifySeriesMaps(t, setups[2], namesp.ID(), allData)
 }

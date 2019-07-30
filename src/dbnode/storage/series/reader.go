@@ -182,14 +182,8 @@ func (r Reader) readersWithBlocksMapAndBuffer(
 						return nil, err
 					}
 					if streamedBlock.IsNotEmpty() {
-						seg, err := streamedBlock.Segment()
-						if err != nil {
-							return nil, err
-						}
 						fmt.Println("appending from disk")
-						if seg.Head != nil || seg.Tail != nil {
-							resultsBlock = append(resultsBlock, streamedBlock)
-						}
+						resultsBlock = append(resultsBlock, streamedBlock)
 					}
 				}
 			}

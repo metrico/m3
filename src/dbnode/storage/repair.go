@@ -152,7 +152,6 @@ func (r shardRepairer) Repair(
 			r.logger.Error(
 				"Shadow compare failed",
 				zap.Error(err))
-			return repair.MetadataComparisonResult{}, err
 		}
 	}
 
@@ -207,19 +206,26 @@ func (r shardRepairer) Repair(
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
 		// TODO: Fill in tags somehow.
-		it := r.opts.ReaderIteratorPool().Get()
+		// it := r.opts.ReaderIteratorPool().Get()
 		stream, err := block.Stream(ctx)
 		if err != nil {
 			panic(err)
 		}
-		it.Reset(stream, nsCtx.Schema)
+		// it.Reset(stream, nsCtx.Schema)
+		seg, err := stream.Segment()
+		if err != nil {
+			panic(err)
+		}
+		if seg.Head == nil && seg.Tail == nil {
+			panic("nil segment!")
+		}
 		// fmt.Println("------")
 		// for it.Next() {
 		// 	fmt.Println(it.Current())
 		// }
-		if err := it.Err(); err != nil {
-			panic(err)
-		}
+		// if err := it.Err(); err != nil {
+		// 	panic(err)
+		// }
 		// it.Reset(block.Get)
 		results.AddBlock(id, ident.Tags{}, block)
 		// TODO(rartoul): TODO.
@@ -573,6 +579,7 @@ func (r shardRepairer) shadowCompare(
 
 		tmpCtx.Reset()
 		defer tmpCtx.BlockingClose()
+
 		localSeriesDataBlocks, err := shard.ReadEncoded(tmpCtx, seriesID, start, end, nsCtx)
 		if err != nil {
 			return err

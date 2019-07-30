@@ -535,28 +535,25 @@ func (s *service) readDatapoints(
 ) ([]*rpc.Datapoint, error) {
 	encoded, err := db.ReadEncoded(ctx, nsID, tsID, start, end)
 	if err != nil {
-		fmt.Println("read encoded error")
 		return nil, err
 	}
-	fmt.Println("len(encoded)", len(encoded))
-	for i := range encoded {
-		fmt.Printf("len(encoded[%d]) %d\n", i, len(encoded[i]))
 
-		for _, sReader := range encoded[i] {
-			seg, err := sReader.Segment()
+	// Resolve all futures and filter out any empty segments.
+	filteredBlockReaderSliceOfSlices := encoded[:0]
+	for i := range encoded {
+		filteredBlockReaders := encoded[i][:0]
+		for _, bReader := range encoded[i] {
+			seg, err := bReader.Segment()
 			if err != nil {
-				panic(err)
+				return nil, err
 			}
-			if seg.Head != nil {
-				fmt.Println("head length", seg.Head.Len())
-			} else {
-				fmt.Println("head empty")
+			if seg.Head == nil && seg.Tail == nil {
+				continue
 			}
-			if seg.Tail != nil {
-				fmt.Println("Tail length", seg.Tail.Len())
-			} else {
-				fmt.Println("Tail empty")
-			}
+			filteredBlockReaders = append(filteredBlockReaders, bReader)
+		}
+		if len(filteredBlockReaders) > 0 {
+			filteredBlockReaderSliceOfSlices = append(filteredBlockReaderSliceOfSlices, filteredBlockReaders)
 		}
 	}
 
@@ -565,7 +562,9 @@ func (s *service) readDatapoints(
 
 	multiIt := db.Options().MultiReaderIteratorPool().Get()
 	nsCtx := namespace.NewContextFor(nsID, db.Options().SchemaRegistry())
-	multiIt.ResetSliceOfSlices(xio.NewReaderSliceOfSlicesFromBlockReadersIterator(encoded), nsCtx.Schema)
+	multiIt.ResetSliceOfSlices(
+		xio.NewReaderSliceOfSlicesFromBlockReadersIterator(
+			filteredBlockReaderSliceOfSlices), nsCtx.Schema)
 	defer multiIt.Close()
 
 	for multiIt.Next() {
