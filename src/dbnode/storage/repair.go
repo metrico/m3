@@ -94,6 +94,7 @@ func (r shardRepairer) Repair(
 	tr xtime.Range,
 	shard databaseShard,
 ) (repair.MetadataComparisonResult, error) {
+	fmt.Println("running shard repair!")
 	session, err := r.client.DefaultAdminSession()
 	if err != nil {
 		return repair.MetadataComparisonResult{}, err
@@ -107,7 +108,7 @@ func (r shardRepairer) Repair(
 	)
 
 	metadata := repair.NewReplicaMetadataComparer(replicas, r.rpopts)
-	ctx.RegisterFinalizer(metadata)
+	// ctx.RegisterFinalizer(metadata)
 
 	// Add local metadata
 	opts := block.FetchBlocksMetadataOptions{
@@ -118,7 +119,7 @@ func (r shardRepairer) Repair(
 		accumLocalMetadata = block.NewFetchBlocksMetadataResults()
 		pageToken          PageToken
 	)
-	ctx.RegisterCloser(accumLocalMetadata)
+	// ctx.RegisterCloser(accumLocalMetadata)
 
 	for {
 		// It's possible for FetchBlocksMetadataV2 to not return all the metadata at once even if
@@ -181,7 +182,13 @@ func (r shardRepairer) Repair(
 		// / finalization and all that).
 		for _, replicaMetadata := range e.Value().Metadata.Blocks() {
 			// TODO(rartoul): check block starts and if they're wrong emit some debug log.
-			metadatas = append(metadatas, replicaMetadata.Metadata()...)
+			for _, replicaMetadata := range replicaMetadata.Metadata() {
+				// Don't request blocks for self metadata.
+				if replicaMetadata.Host.ID() != session.Origin().ID() {
+					metadatas = append(metadatas, replicaMetadata)
+				}
+			}
+			// metadatas = append(metadatas, replicaMetadata.Metadata()...)
 		}
 	}
 
@@ -200,11 +207,26 @@ func (r shardRepairer) Repair(
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
 		// TODO: Fill in tags somehow.
+		it := r.opts.ReaderIteratorPool().Get()
+		stream, err := block.Stream(ctx)
+		if err != nil {
+			panic(err)
+		}
+		it.Reset(stream, nsCtx.Schema)
+		// fmt.Println("------")
+		// for it.Next() {
+		// 	fmt.Println(it.Current())
+		// }
+		if err := it.Err(); err != nil {
+			panic(err)
+		}
+		// it.Reset(block.Get)
 		results.AddBlock(id, ident.Tags{}, block)
 		// TODO(rartoul): TODO.
 	}
 
 	// TODO(rartoul): Make load accept an interface that seriesIter can implement (maybe?).
+	fmt.Println("loading series: ", results.AllSeries().Len())
 	if err := shard.Load(results.AllSeries()); err != nil {
 		return repair.MetadataComparisonResult{}, err
 	}
@@ -366,7 +388,7 @@ func newDatabaseRepairer(database database, opts Options) (databaseRepairer, err
 }
 
 func (r *dbRepairer) run() {
-	var curIntervalStart time.Time
+	// var curIntervalStart time.Time
 
 	for {
 		r.closedLock.Lock()
@@ -379,21 +401,22 @@ func (r *dbRepairer) run() {
 
 		r.sleepFn(r.repairCheckInterval)
 
-		now := r.nowFn()
-		intervalStart := now.Truncate(r.repairInterval)
+		// now := r.nowFn()
+		// intervalStart := now.Truncate(r.repairInterval)
 
 		// If we haven't reached the offset yet, skip
-		target := intervalStart.Add(r.repairTimeOffset + r.repairTimeJitter)
-		if now.Before(target) {
-			continue
-		}
+		// target := intervalStart.Add(r.repairTimeOffset + r.repairTimeJitter)
+		// if now.Before(target) {
+		// 	continue
+		// }
 
 		// If we are in the same interval, we must have already repaired, skip
-		if intervalStart.Equal(curIntervalStart) {
-			continue
-		}
+		// if intervalStart.Equal(curIntervalStart) {
+		// 	continue
+		// }
 
-		curIntervalStart = intervalStart
+		// fmt.Println("starting repair")
+		// curIntervalStart = intervalStart
 		if err := r.repairFn(); err != nil {
 			r.logger.Error("error repairing database", zap.Error(err))
 		}
@@ -425,6 +448,7 @@ func (r *dbRepairer) needsRepair(ns ident.ID, t time.Time) bool {
 	if !exists {
 		return true
 	}
+	fmt.Println("DOES NOT NEED REPAIR!?!?!?")
 	return repairState.Status == repairNotStarted ||
 		(repairState.Status == repairFailed && repairState.NumFailures < r.repairMaxRetries)
 }
@@ -454,6 +478,7 @@ func (r *dbRepairer) Repair() error {
 	}
 
 	defer func() {
+		// TODO(rartoul): Delete this.
 		atomic.StoreInt32(&r.running, 0)
 	}()
 
@@ -481,9 +506,9 @@ func (r *dbRepairer) Report() {
 
 func (r *dbRepairer) repairNamespaceWithTimeRange(n databaseNamespace, tr xtime.Range) error {
 	var (
-		rtopts    = n.Options().RetentionOptions()
-		blockSize = rtopts.BlockSize()
-		err       error
+		// rtopts = n.Options().RetentionOptions()
+		// blockSize = rtopts.BlockSize()
+		err error
 	)
 
 	// repair the namespace
@@ -492,16 +517,16 @@ func (r *dbRepairer) repairNamespaceWithTimeRange(n databaseNamespace, tr xtime.
 	}
 
 	// update repairer state
-	for t := tr.Start; t.Before(tr.End); t = t.Add(blockSize) {
-		repairState, _ := r.repairStatesByNs.repairStates(n.ID(), t)
-		if err == nil {
-			repairState.Status = repairSuccess
-		} else {
-			repairState.Status = repairFailed
-			repairState.NumFailures++
-		}
-		r.repairStatesByNs.setRepairState(n.ID(), t, repairState)
-	}
+	// for t := tr.Start; t.Before(tr.End); t = t.Add(blockSize) {
+	// 	repairState, _ := r.repairStatesByNs.repairStates(n.ID(), t)
+	// 	if err == nil {
+	// 		repairState.Status = repairSuccess
+	// 	} else {
+	// 		repairState.Status = repairFailed
+	// 		repairState.NumFailures++
+	// 	}
+	// 	r.repairStatesByNs.setRepairState(n.ID(), t, repairState)
+	// }
 
 	return err
 }

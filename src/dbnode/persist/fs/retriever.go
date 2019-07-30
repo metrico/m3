@@ -33,6 +33,7 @@ package fs
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -280,6 +281,7 @@ func (r *blockRetriever) fetchBatch(
 	// Resolve the seeker from the seeker mgr
 	seeker, err := seekerMgr.Borrow(shard, blockStart)
 	if err != nil {
+		fmt.Println("seekerMgr borrow err", err)
 		for _, req := range reqs {
 			req.onError(err)
 		}
@@ -291,6 +293,7 @@ func (r *blockRetriever) fetchBatch(
 	for _, req := range reqs {
 		entry, err := seeker.SeekIndexEntry(req.id, seekerResources)
 		if err != nil && err != errSeekIDNotFound {
+			fmt.Println("err in seekindexentry")
 			req.onError(err)
 			continue
 		}
@@ -317,6 +320,7 @@ func (r *blockRetriever) fetchBatch(
 		if req.foundAndHasNoError() {
 			data, err = seeker.SeekByIndexEntry(req.indexEntry, seekerResources)
 			if err != nil && err != errSeekIDNotFound {
+				fmt.Println("err in seekbyindexentry")
 				req.onError(err)
 				continue
 			}
@@ -417,18 +421,21 @@ func (r *blockRetriever) Stream(
 
 	idExists, err := r.seekerMgr.Test(id, shard, startTime)
 	if err != nil {
+		fmt.Println("test err", err)
 		return xio.EmptyBlockReader, err
 	}
 
 	// If the ID is not in the seeker's bloom filter, then it's definitely not on
 	// disk and we can return immediately.
 	if !idExists {
+		fmt.Println("NOT EXISTS")
 		// No need to call req.onRetrieve.OnRetrieveBlock if there is no data.
 		req.onRetrieved(ts.Segment{}, namespace.Context{})
 		return req.toBlock(), nil
 	}
 	reqs, err := r.shardRequests(shard)
 	if err != nil {
+		fmt.Println("shard requests err", err)
 		return xio.EmptyBlockReader, err
 	}
 
@@ -448,6 +455,7 @@ func (r *blockRetriever) Stream(
 	// the data. This means that even though we're returning nil for error
 	// here, the caller may still encounter an error when they attempt to
 	// read the data.
+	fmt.Println("req err", req.err)
 	return req.toBlock(), nil
 }
 

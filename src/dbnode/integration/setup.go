@@ -551,10 +551,15 @@ func (ts *testSetup) startServerBase(waitForBootstrap bool) error {
 		return fmt.Errorf("error watching topology: %v", err)
 	}
 
+	fmt.Println("creating new database")
 	ts.db, err = cluster.NewDatabase(ts.hostID, topo, topoWatch, ts.storageOpts)
 	if err != nil {
+		fmt.Println("error creating new database")
+		fmt.Println(err)
 		return err
 	}
+	fmt.Println("done creating new database")
+	fmt.Println(err)
 
 	leaseVerifier := storage.NewLeaseVerifier(ts.db)
 	if err := ts.blockLeaseManager.SetLeaseVerifier(leaseVerifier); err != nil {
@@ -565,6 +570,7 @@ func (ts *testSetup) startServerBase(waitForBootstrap bool) error {
 	ts.maybeResetClients()
 
 	go func() {
+		fmt.Println("calling open and serve")
 		if err := openAndServe(
 			ts.httpClusterAddr(), ts.tchannelClusterAddr(),
 			ts.httpNodeAddr(), ts.tchannelNodeAddr(), ts.httpDebugAddr(),

@@ -517,6 +517,7 @@ func (s *service) Fetch(tctx thrift.Context, req *rpc.FetchRequest) (*rpc.FetchR
 	datapoints, err := s.readDatapoints(ctx, db, nsID, tsID, start, end,
 		req.ResultTimeType)
 	if err != nil {
+		fmt.Println("read data points error")
 		s.metrics.fetch.ReportError(s.nowFn().Sub(callStart))
 		return nil, convert.ToRPCError(err)
 	}
@@ -534,7 +535,29 @@ func (s *service) readDatapoints(
 ) ([]*rpc.Datapoint, error) {
 	encoded, err := db.ReadEncoded(ctx, nsID, tsID, start, end)
 	if err != nil {
+		fmt.Println("read encoded error")
 		return nil, err
+	}
+	fmt.Println("len(encoded)", len(encoded))
+	for i := range encoded {
+		fmt.Printf("len(encoded[%d]) %d\n", i, len(encoded[i]))
+
+		for _, sReader := range encoded[i] {
+			seg, err := sReader.Segment()
+			if err != nil {
+				panic(err)
+			}
+			if seg.Head != nil {
+				fmt.Println("head length", seg.Head.Len())
+			} else {
+				fmt.Println("head empty")
+			}
+			if seg.Tail != nil {
+				fmt.Println("Tail length", seg.Tail.Len())
+			} else {
+				fmt.Println("Tail empty")
+			}
+		}
 	}
 
 	// Make datapoints an initialized empty array for JSON serialization as empty array than null
@@ -562,6 +585,7 @@ func (s *service) readDatapoints(
 	}
 
 	if err := multiIt.Err(); err != nil {
+		fmt.Println("merge error")
 		return nil, err
 	}
 
