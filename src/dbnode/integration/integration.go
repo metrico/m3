@@ -308,7 +308,7 @@ func newDefaultBootstrappableTestSetups(
 						SetAdminClient(adminClient).
 						SetDebugShadowComparisonsPercentage(1.0).
 						// Avoid log spam.
-						SetDebugShadowComparisonsEnabled(true))
+						SetDebugShadowComparisonsEnabled(false))
 		}
 
 		setups = append(setups, setup)
