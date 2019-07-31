@@ -23,7 +23,6 @@
 package integration
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -37,6 +36,52 @@ import (
 )
 
 func TestRepair(t *testing.T) {
+	genRepairData := func(now time.Time, blockSize time.Duration) (
+		node0Data generate.SeriesBlocksByStart,
+		node1Data generate.SeriesBlocksByStart,
+		node2Data generate.SeriesBlocksByStart,
+		allData generate.SeriesBlocksByStart,
+	) {
+		node0Data = generate.BlocksByStart([]generate.BlockConfig{
+			{IDs: []string{"foo"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
+		})
+		node1Data = generate.BlocksByStart([]generate.BlockConfig{
+			{IDs: []string{"bar"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
+		})
+
+		allData = make(map[xtime.UnixNano]generate.SeriesBlock)
+		for start, data := range node0Data {
+			for _, series := range data {
+				allData[start] = append(allData[start], series)
+			}
+		}
+		for start, data := range node1Data {
+			for _, series := range data {
+				allData[start] = append(allData[start], series)
+			}
+		}
+		for start, data := range node2Data {
+			for _, series := range data {
+				allData[start] = append(allData[start], series)
+			}
+		}
+
+		return node0Data, node1Data, node2Data, allData
+	}
+
+	testRepair(t, genRepairData)
+}
+
+type genRepairDatafn func(
+	now time.Time,
+	blockSize time.Duration,
+) (
+	node0Data generate.SeriesBlocksByStart,
+	node1Data generate.SeriesBlocksByStart,
+	node2Data generate.SeriesBlocksByStart,
+	allData generate.SeriesBlocksByStart)
+
+func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 	if testing.Short() {
 		t.SkipNow()
 	}
@@ -68,73 +113,23 @@ func TestRepair(t *testing.T) {
 	now := setups[0].getNowFn()
 	blockSize := retentionOpts.BlockSize()
 
-	node1Data := generate.BlocksByStart([]generate.BlockConfig{
-		{IDs: []string{"foo"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
-	})
-	node2Data := generate.BlocksByStart([]generate.BlockConfig{
-		{IDs: []string{"bar"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
-	})
-
-	allData := make(map[xtime.UnixNano]generate.SeriesBlock)
-	for start, data := range node1Data {
-		for _, series := range data {
-			allData[start] = append(allData[start], series)
-		}
+	node0Data, node1Data, node2Data, allData := genRepairData(now, blockSize)
+	if node0Data != nil {
+		require.NoError(t, writeTestDataToDisk(namesp, setups[0], node0Data, 0))
 	}
-	for start, data := range node2Data {
-		for _, series := range data {
-			allData[start] = append(allData[start], series)
-		}
+	if node1Data != nil {
+		require.NoError(t, writeTestDataToDisk(namesp, setups[1], node1Data, 0))
 	}
-	// node3Data := generate.BlocksByStart([]generate.BlockConfig{
-	// 	{IDs: []string{"baz"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
-	// })
-	// Make sure we have multiple blocks of data for multiple series to exercise
-	// the grouping and aggregating logic in the client peer bootstrapping process
-	// seriesMaps := generate.BlocksByStart([]generate.BlockConfig{
-	// 	{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
-	// 	{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-3 * blockSize)},
-	// 	{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-2 * blockSize)},
-	// 	{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-blockSize)},
-	// 	{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now},
-	// })
-	// left := make(map[xtime.UnixNano]generate.SeriesBlock)
-	// right := make(map[xtime.UnixNano]generate.SeriesBlock)
-	// shouldMissData := false
-	// appendSeries := func(target map[xtime.UnixNano]generate.SeriesBlock, start time.Time, s generate.Series) {
-	// 	startNano := xtime.ToUnixNano(start)
-	// 	if shouldMissData {
-	// 		var dataWithMissing []generate.TestValue
-	// 		for i := range s.Data {
-	// 			if i%2 != 0 {
-	// 				continue
-	// 			}
-	// 			dataWithMissing = append(dataWithMissing, s.Data[i])
-	// 		}
-	// 		target[startNano] = append(target[startNano], generate.Series{ID: s.ID, Data: dataWithMissing})
-	// 	} else {
-	// 		target[startNano] = append(target[startNano], s)
-	// 	}
-	// 	shouldMissData = !shouldMissData
-	// }
-	// for start, data := range seriesMaps {
-	// 	for _, series := range data {
-	// 		appendSeries(left, start.ToTime(), series)
-	// 		appendSeries(right, start.ToTime(), series)
-	// 	}
-	// }
-	require.NoError(t, writeTestDataToDisk(namesp, setups[0], node1Data, 0))
-	require.NoError(t, writeTestDataToDisk(namesp, setups[1], node2Data, 0))
+	if node2Data != nil {
+		require.NoError(t, writeTestDataToDisk(namesp, setups[2], node2Data, 0))
+	}
 
-	// Start the first two servers with filesystem bootstrappers
-	setups[:2].parallel(func(s *testSetup) {
+	// Start the servers with filesystem bootstrappers.
+	setups[:3].parallel(func(s *testSetup) {
 		if err := s.startServer(); err != nil {
 			panic(err)
 		}
 	})
-
-	// Start the last server with peers and filesystem bootstrappers
-	require.NoError(t, setups[2].startServer())
 	log.Debug("servers are now up")
 
 	// Stop the servers
@@ -145,14 +140,21 @@ func TestRepair(t *testing.T) {
 		log.Debug("servers are now down")
 	}()
 
-	for _, s := range setups {
-		s.setNowFn(s.getNowFn().Add(time.Minute))
-	}
-	time.Sleep(30 * time.Second)
-	// Verify in-memory data match what we expect
+	waitUntil(func() bool {
+		for _, setup := range setups {
+			if err := checkFlushedDataFiles(setup.shardSet, setup.storageOpts, namesp.ID(), allData); err != nil {
+				// Increment the time each time it fails to make sure background processes are able to proceed.
+				for _, s := range setups {
+					s.setNowFn(s.getNowFn().Add(time.Minute))
+				}
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second)
+
+	// Verify in-memory data matches what we expect.
 	verifySeriesMaps(t, setups[0], namesp.ID(), allData)
 	verifySeriesMaps(t, setups[1], namesp.ID(), allData)
-
-	fmt.Println("^^^^^^^^^^^^^^")
 	verifySeriesMaps(t, setups[2], namesp.ID(), allData)
 }
