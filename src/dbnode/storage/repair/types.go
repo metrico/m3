@@ -193,12 +193,6 @@ type Options interface {
 	// RepairThrottle returns the repair throttle.
 	RepairThrottle() time.Duration
 
-	// SetRepairMaxRetries sets the max number of retries for a block start.
-	SetRepairMaxRetries(value int) Options
-
-	// MaxRepairRetries returns the max number of retries for a block start.
-	RepairMaxRetries() int
-
 	// SetHostBlockMetadataSlicePool sets the hostBlockMetadataSlice pool.
 	SetHostBlockMetadataSlicePool(value HostBlockMetadataSlicePool) Options
 

@@ -259,8 +259,8 @@ const (
 )
 
 type repairState struct {
+	LastAttempt time.Time
 	Status      repairStatus
-	NumFailures int
 }
 
 type namespaceRepairStateByTime map[xtime.UnixNano]repairState
@@ -322,7 +322,6 @@ type dbRepairer struct {
 	repairTimeOffset    time.Duration
 	repairTimeJitter    time.Duration
 	repairCheckInterval time.Duration
-	repairMaxRetries    int
 	status              tally.Gauge
 
 	closedLock sync.Mutex
@@ -361,7 +360,6 @@ func newDatabaseRepairer(database database, opts Options) (databaseRepairer, err
 		repairTimeOffset:    ropts.RepairTimeOffset(),
 		repairTimeJitter:    jitter,
 		repairCheckInterval: ropts.RepairCheckInterval(),
-		repairMaxRetries:    ropts.RepairMaxRetries(),
 		status:              scope.Gauge("repair"),
 	}
 	r.repairFn = r.Repair
@@ -412,26 +410,28 @@ func (r *dbRepairer) namespaceRepairTimeRanges(ns databaseNamespace) xtime.Range
 		start     = now.Add(-rtopts.RetentionPeriod()).Truncate(blockSize)
 		end       = now.Add(-rtopts.BufferPast()).Truncate(blockSize)
 	)
+	return xtime.NewRanges(xtime.Range{Start: start, End: end})
+	// targetRanges := xtime.NewRanges(xtime.Range{Start: start, End: end})
+	// for tNano := range r.repairStatesByNs[ns.ID().String()] {
+	// 	t := tNano.ToTime()
+	// 	if !r.needsRepair(ns.ID(), t) {
+	// 		targetRanges = targetRanges.RemoveRange(xtime.Range{Start: t, End: t.Add(blockSize)})
+	// 	}
+	// }
 
-	targetRanges := xtime.NewRanges(xtime.Range{Start: start, End: end})
-	for tNano := range r.repairStatesByNs[ns.ID().String()] {
-		t := tNano.ToTime()
-		if !r.needsRepair(ns.ID(), t) {
-			targetRanges = targetRanges.RemoveRange(xtime.Range{Start: t, End: t.Add(blockSize)})
-		}
-	}
-
-	return targetRanges
+	// return targetRanges
 }
 
-func (r *dbRepairer) needsRepair(ns ident.ID, t time.Time) bool {
-	repairState, exists := r.repairStatesByNs.repairStates(ns, t)
-	if !exists {
-		return true
-	}
-	return repairState.Status == repairNotStarted ||
-		(repairState.Status == repairFailed && repairState.NumFailures < r.repairMaxRetries)
-}
+// func (r *dbRepairer) needsRepair(ns ident.ID, t time.Time) bool {
+// 	repairState, exists := r.repairStatesByNs.repairStates(ns, t)
+// 	if !exists {
+// 		return true
+// 	}
+// 	return repairState.Status == repairNotStarted ||
+// 		repairState.LastAttempt.IsZero() ||
+// 		repairState.Status == repairFailed ||
+// 	  repairState.Status == repairSuccess && )
+// }
 
 func (r *dbRepairer) Start() {
 	if r.repairInterval <= 0 {
