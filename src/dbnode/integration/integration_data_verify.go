@@ -326,10 +326,15 @@ func compareSeriesList(
 				"series ID did not match, expected: %s, actual: %s",
 				expected[i].ID.String(), actual[i].ID.String())
 		}
+		if len(expected[i].Data) != len(actual[i].Data) {
+			return fmt.Errorf(
+				"data for series: %s did not match, expected: %d data points, actual: %d",
+				expected[i].ID.String(), len(expected[i].Data), len(actual[i].Data))
+		}
 		if !reflect.DeepEqual(expected[i].Data, actual[i].Data) {
 			return fmt.Errorf(
-				"data did not match, expected: %v, actual: %v",
-				expected[i].Data, actual[i].Data)
+				"data for series: %s did not match, expected: %v, actual: %v",
+				expected[i].ID.String(), expected[i].Data, actual[i].Data)
 		}
 	}
 

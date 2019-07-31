@@ -21,6 +21,7 @@
 package fs
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -211,6 +212,7 @@ func (m *merger) Merge(
 			return err
 		}
 		if hasData {
+			fmt.Println("merging mem with disk for series", id.String())
 			segmentReaders = appendBlockReadersToSegmentReaders(segmentReaders, mergeWithData)
 		}
 
@@ -281,10 +283,12 @@ func persistSegmentReaders(
 	persistFn persist.DataFn,
 ) error {
 	if len(segReaders) == 0 {
+		fmt.Println("no seg readers")
 		return nil
 	}
 
 	if len(segReaders) == 1 {
+		fmt.Println("one seg readers")
 		return persistSegmentReader(id, tags, segReaders[0], persistFn)
 	}
 
@@ -313,6 +317,7 @@ func persistIter(
 		return err
 	}
 
+	fmt.Println("num after merge:", encoder.NumEncoded())
 	segment := encoder.Discard()
 	return persistSegment(id, tags, segment, persistFn)
 }

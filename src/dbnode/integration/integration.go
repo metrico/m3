@@ -303,8 +303,8 @@ func newDefaultBootstrappableTestSetups(
 						SetRepairInterval(3 * time.Second).
 						SetRepairTimeOffset(time.Second).
 						SetRepairTimeJitter(time.Second).
-						SetRepairThrottle(time.Second).
-						SetRepairCheckInterval(time.Second).
+						SetRepairThrottle(time.Nanosecond).
+						SetRepairCheckInterval(time.Nanosecond).
 						SetAdminClient(adminClient).
 						SetDebugShadowComparisonsPercentage(1.0).
 						// Avoid log spam.

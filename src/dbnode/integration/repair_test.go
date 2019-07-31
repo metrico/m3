@@ -81,8 +81,8 @@ func TestRepairMergeSeries(t *testing.T) {
 	) {
 		allData = generate.BlocksByStart([]generate.BlockConfig{
 			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
-			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-3 * blockSize)},
-			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-2 * blockSize)}})
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-3 * blockSize)}})
+		// {IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-2 * blockSize)}})
 		node0Data = make(map[xtime.UnixNano]generate.SeriesBlock)
 		node1Data = make(map[xtime.UnixNano]generate.SeriesBlock)
 
@@ -137,6 +137,7 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 		SetBufferFuture(2 * time.Minute)
 	nsOpts := namespace.NewOptions().
 		SetRepairEnabled(true).
+		SetColdWritesEnabled(true).
 		SetRetentionOptions(retentionOpts)
 	namesp, err := namespace.NewMetadata(testNamespaces[0], nsOpts)
 	require.NoError(t, err)
@@ -182,9 +183,10 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 		log.Debug("servers are now down")
 	}()
 
-	waitUntil(func() bool {
+	require.True(t, waitUntil(func() bool {
 		for _, setup := range setups {
 			if err := checkFlushedDataFiles(setup.shardSet, setup.storageOpts, namesp.ID(), allData); err != nil {
+				// fmt.Println(err)
 				// Increment the time each time it fails to make sure background processes are able to proceed.
 				for _, s := range setups {
 					s.setNowFn(s.getNowFn().Add(time.Second))
@@ -193,7 +195,7 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 			}
 		}
 		return true
-	}, 10*time.Second)
+	}, 60*time.Second))
 
 	// Verify in-memory data matches what we expect.
 	verifySeriesMaps(t, setups[0], namesp.ID(), allData)

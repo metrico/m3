@@ -209,8 +209,15 @@ func (r shardRepairer) Repair(
 	results := result.NewShardResult(0, result.NewOptions())
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
-		// TODO: Fill in tags somehow.
-		results.AddBlock(id, ident.Tags{}, block)
+		if existing, ok := results.BlockAt(id, block.StartTime()); ok {
+			if err := existing.Merge(block); err != nil {
+				return repair.MetadataComparisonResult{}, err
+			}
+			// TODO: Fill in tags somehow.
+			// results.AddBlock(id, ident.Tags{}, existing)
+		} else {
+			results.AddBlock(id, ident.Tags{}, block)
+		}
 		// TODO(rartoul): TODO.
 	}
 
@@ -387,7 +394,7 @@ func (r *dbRepairer) run() {
 			break
 		}
 
-		r.sleepFn(r.repairCheckInterval)
+		// r.sleepFn(r.repairCheckInterval)
 
 		// now := r.nowFn()
 		// intervalStart := now.Truncate(r.repairInterval)
@@ -459,62 +466,93 @@ func (r *dbRepairer) Repair() error {
 
 	for _, n := range namespaces {
 		repairRange := r.namespaceRepairTimeRange(n)
+		fmt.Println("nsRepairRange", repairRange)
 		blockSize := n.Options().RetentionOptions().BlockSize()
 
-		allBlocksAreRepaired := false
-		for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart.Add(blockSize) {
+		allBlocksAreRepaired := true
+		for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
 			repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 			if !ok || repairState.Status != repairSuccess {
+				fmt.Println("found not repaired")
+				fmt.Println("ok", ok)
+				fmt.Println("repairState.Status", repairState.Status)
 				allBlocksAreRepaired = false
 				break
 			}
 		}
 
 		if !allBlocksAreRepaired {
+			fmt.Println("not all repaired")
 			numBlocksRepaired := 0
-			for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart.Add(blockSize) {
+			for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
 				if numBlocksRepaired >= repairLimitPerIter {
+					fmt.Println("breaking")
 					break
 				}
 
 				repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 				if !ok || repairState.Status != repairSuccess {
+					fmt.Println(1)
 					repairRange := xtime.Range{Start: blockStart, End: blockStart.Add(blockSize)}
-					multiErr = multiErr.Add(r.repairNamespaceWithTimeRange(n, repairRange))
+					repairTime := r.nowFn()
+					// TODO(rartoul): Helper?
+					if err := r.repairNamespaceWithTimeRange(n, repairRange); err != nil {
+						r.markRepairAttempt(n.ID(), blockStart, repairTime, repairFailed)
+						multiErr = multiErr.Add(r.repairNamespaceWithTimeRange(n, repairRange))
+					} else {
+						r.markRepairAttempt(n.ID(), blockStart, repairTime, repairSuccess)
+					}
+					fmt.Println(2)
 					numBlocksRepaired++
 				}
 			}
-		} else {
-			numBlocksRepaired := 0
-			for {
-				if numBlocksRepaired >= repairLimitPerIter {
-					break
-				}
-				var leastRecentlyRepairedBlockStart time.Time
-				for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart.Add(blockSize) {
-					repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
-					if !ok {
-						// Should never happen.
-						instrument.EmitAndLogInvariantViolation(r.opts.InstrumentOptions(), func(l *zap.Logger) {
-							l.With(
-								zap.Time("blockStart", blockStart),
-								zap.String("namespace", n.ID().String()),
-							).Error("missing repair state in all-blocks-are-repaired branch")
-						})
-						continue
-					}
 
-					if leastRecentlyRepairedBlockStart.IsZero() || repairState.LastAttempt.Before(leastRecentlyRepairedBlockStart) {
-						leastRecentlyRepairedBlockStart = blockStart
-					}
-				}
+			continue
+		}
 
-				repairRange := xtime.Range{Start: leastRecentlyRepairedBlockStart, End: leastRecentlyRepairedBlockStart.Add(blockSize)}
-				multiErr = multiErr.Add(r.repairNamespaceWithTimeRange(n, repairRange))
-				numBlocksRepaired++
+		fmt.Println("all repaired")
+		numBlocksRepaired := 0
+		for {
+			if numBlocksRepaired >= repairLimitPerIter {
+				break
 			}
+
+			var (
+				leastRecentlyRepairedBlockStart               time.Time
+				leastRecentlyRepairedBlockStartLastRepairTime time.Time
+			)
+			for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
+				repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
+				if !ok {
+					// Should never happen.
+					instrument.EmitAndLogInvariantViolation(r.opts.InstrumentOptions(), func(l *zap.Logger) {
+						l.With(
+							zap.Time("blockStart", blockStart),
+							zap.String("namespace", n.ID().String()),
+						).Error("missing repair state in all-blocks-are-repaired branch")
+					})
+					continue
+				}
+
+				if leastRecentlyRepairedBlockStart.IsZero() || repairState.LastAttempt.Before(leastRecentlyRepairedBlockStartLastRepairTime) {
+					leastRecentlyRepairedBlockStart = blockStart
+					leastRecentlyRepairedBlockStartLastRepairTime = repairState.LastAttempt
+				}
+			}
+
+			repairRange := xtime.Range{Start: leastRecentlyRepairedBlockStart, End: leastRecentlyRepairedBlockStart.Add(blockSize)}
+			repairTime := r.nowFn()
+			if err := r.repairNamespaceWithTimeRange(n, repairRange); err != nil {
+				r.markRepairAttempt(n.ID(), leastRecentlyRepairedBlockStart, repairTime, repairFailed)
+				multiErr = multiErr.Add(r.repairNamespaceWithTimeRange(n, repairRange))
+			} else {
+				r.markRepairAttempt(n.ID(), leastRecentlyRepairedBlockStart, repairTime, repairSuccess)
+			}
+			fmt.Println(4)
+			numBlocksRepaired++
 		}
 	}
+
 	return multiErr.FinalError()
 }
 
@@ -528,29 +566,40 @@ func (r *dbRepairer) Report() {
 
 func (r *dbRepairer) repairNamespaceWithTimeRange(n databaseNamespace, tr xtime.Range) error {
 	var (
-		rtopts    = n.Options().RetentionOptions()
-		blockSize = rtopts.BlockSize()
-		err       error
+		// rtopts    = n.Options().RetentionOptions()
+		// blockSize = rtopts.BlockSize()
+		err error
 	)
 
-	repairStart := r.nowFn()
+	// repairStart := r.nowFn()
 	if err = n.Repair(r.shardRepairer, tr); err != nil {
 		err = fmt.Errorf("namespace %s failed to repair time range %v: %v", n.ID().String(), tr, err)
 	}
 
 	// Update repair state.
-	for t := tr.Start; t.Before(tr.End); t = t.Add(blockSize) {
-		repairState, _ := r.repairStatesByNs.repairStates(n.ID(), t)
-		if err == nil {
-			repairState.Status = repairSuccess
-		} else {
-			repairState.Status = repairFailed
-		}
-		repairState.LastAttempt = repairStart
-		r.repairStatesByNs.setRepairState(n.ID(), t, repairState)
-	}
+	// for t := tr.Start; t.Before(tr.End); t = t.Add(blockSize) {
+	// 	repairState, _ := r.repairStatesByNs.repairStates(n.ID(), t)
+	// 	if err == nil {
+	// 		repairState.Status = repairSuccess
+	// 	} else {
+	// 		repairState.Status = repairFailed
+	// 	}
+	// 	repairState.LastAttempt = repairStart
+	// 	r.repairStatesByNs.setRepairState(n.ID(), t, repairState)
+	// }
 
 	return err
+}
+
+func (r *dbRepairer) markRepairAttempt(
+	namespace ident.ID,
+	blockStart time.Time,
+	repairTime time.Time,
+	repairStatus repairStatus) {
+	repairState, _ := r.repairStatesByNs.repairStates(namespace, blockStart)
+	repairState.Status = repairStatus
+	repairState.LastAttempt = repairTime
+	r.repairStatesByNs.setRepairState(namespace, blockStart, repairState)
 }
 
 var noOpRepairer databaseRepairer = repairerNoOp{}

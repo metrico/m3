@@ -432,6 +432,7 @@ func (b *dbBuffer) Tick(blockStates ShardBlockStateSnapshot, nsCtx namespace.Con
 }
 
 func (b *dbBuffer) Load(bl block.DatabaseBlock, writeType WriteType) {
+	fmt.Println("LOOOOAAAAAADDDDDEEEEEDDDDD BUFFFFEERRRRR", "coldWrite?", writeType == ColdWrite)
 	var (
 		blockStart = bl.StartTime()
 		buckets    = b.bucketVersionsAtCreate(blockStart)
