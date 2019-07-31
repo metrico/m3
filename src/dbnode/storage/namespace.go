@@ -1219,6 +1219,7 @@ func (n *dbNamespace) Repair(
 		return nil
 	}
 
+	fmt.Println("REPAIRING TIME RANGE", tr)
 	var (
 		wg                    sync.WaitGroup
 		mutex                 sync.Mutex
