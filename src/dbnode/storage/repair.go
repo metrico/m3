@@ -94,7 +94,6 @@ func (r shardRepairer) Repair(
 	tr xtime.Range,
 	shard databaseShard,
 ) (repair.MetadataComparisonResult, error) {
-	fmt.Println("running shard repair!")
 	session, err := r.client.DefaultAdminSession()
 	if err != nil {
 		return repair.MetadataComparisonResult{}, err
@@ -191,7 +190,6 @@ func (r shardRepairer) Repair(
 		}
 	}
 
-	// fmt.Println(metadatas)
 	resultOpts := result.NewOptions()
 	perSeriesReplicaIter, err := session.FetchBlocksFromPeers(nsMeta, shard.ID(), level, metadatas, resultOpts)
 	if err != nil {
@@ -206,33 +204,11 @@ func (r shardRepairer) Repair(
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
 		// TODO: Fill in tags somehow.
-		// it := r.opts.ReaderIteratorPool().Get()
-		stream, err := block.Stream(ctx)
-		if err != nil {
-			panic(err)
-		}
-		// it.Reset(stream, nsCtx.Schema)
-		seg, err := stream.Segment()
-		if err != nil {
-			panic(err)
-		}
-		if seg.Head == nil && seg.Tail == nil {
-			panic("nil segment!")
-		}
-		// fmt.Println("------")
-		// for it.Next() {
-		// 	fmt.Println(it.Current())
-		// }
-		// if err := it.Err(); err != nil {
-		// 	panic(err)
-		// }
-		// it.Reset(block.Get)
 		results.AddBlock(id, ident.Tags{}, block)
 		// TODO(rartoul): TODO.
 	}
 
 	// TODO(rartoul): Make load accept an interface that seriesIter can implement (maybe?).
-	fmt.Println("loading series: ", results.AllSeries().Len())
 	if err := shard.Load(results.AllSeries()); err != nil {
 		return repair.MetadataComparisonResult{}, err
 	}
@@ -421,7 +397,6 @@ func (r *dbRepairer) run() {
 		// 	continue
 		// }
 
-		// fmt.Println("starting repair")
 		// curIntervalStart = intervalStart
 		if err := r.repairFn(); err != nil {
 			r.logger.Error("error repairing database", zap.Error(err))
@@ -454,7 +429,6 @@ func (r *dbRepairer) needsRepair(ns ident.ID, t time.Time) bool {
 	if !exists {
 		return true
 	}
-	fmt.Println("DOES NOT NEED REPAIR!?!?!?")
 	return repairState.Status == repairNotStarted ||
 		(repairState.Status == repairFailed && repairState.NumFailures < r.repairMaxRetries)
 }
