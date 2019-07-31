@@ -35,7 +35,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRepair(t *testing.T) {
+func TestRepairDisjointSeries(t *testing.T) {
 	genRepairData := func(now time.Time, blockSize time.Duration) (
 		node0Data generate.SeriesBlocksByStart,
 		node1Data generate.SeriesBlocksByStart,
@@ -63,6 +63,48 @@ func TestRepair(t *testing.T) {
 		for start, data := range node2Data {
 			for _, series := range data {
 				allData[start] = append(allData[start], series)
+			}
+		}
+
+		return node0Data, node1Data, node2Data, allData
+	}
+
+	testRepair(t, genRepairData)
+}
+
+func TestRepairMergeSeries(t *testing.T) {
+	genRepairData := func(now time.Time, blockSize time.Duration) (
+		node0Data generate.SeriesBlocksByStart,
+		node1Data generate.SeriesBlocksByStart,
+		node2Data generate.SeriesBlocksByStart,
+		allData generate.SeriesBlocksByStart,
+	) {
+		allData = generate.BlocksByStart([]generate.BlockConfig{
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-3 * blockSize)},
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-2 * blockSize)}})
+		node0Data = make(map[xtime.UnixNano]generate.SeriesBlock)
+		node1Data = make(map[xtime.UnixNano]generate.SeriesBlock)
+
+		remainder := 0
+		appendSeries := func(target map[xtime.UnixNano]generate.SeriesBlock, start time.Time, s generate.Series) {
+			var dataWithMissing []generate.TestValue
+			for i := range s.Data {
+				if i%2 != remainder {
+					continue
+				}
+				dataWithMissing = append(dataWithMissing, s.Data[i])
+			}
+			target[xtime.ToUnixNano(start)] = append(
+				target[xtime.ToUnixNano(start)],
+				generate.Series{ID: s.ID, Data: dataWithMissing},
+			)
+			remainder = 1 - remainder
+		}
+		for start, data := range allData {
+			for _, series := range data {
+				appendSeries(node0Data, start.ToTime(), series)
+				appendSeries(node1Data, start.ToTime(), series)
 			}
 		}
 
@@ -125,7 +167,7 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 	}
 
 	// Start the servers with filesystem bootstrappers.
-	setups[:3].parallel(func(s *testSetup) {
+	setups.parallel(func(s *testSetup) {
 		if err := s.startServer(); err != nil {
 			panic(err)
 		}
@@ -145,7 +187,7 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 			if err := checkFlushedDataFiles(setup.shardSet, setup.storageOpts, namesp.ID(), allData); err != nil {
 				// Increment the time each time it fails to make sure background processes are able to proceed.
 				for _, s := range setups {
-					s.setNowFn(s.getNowFn().Add(time.Minute))
+					s.setNowFn(s.getNowFn().Add(time.Second))
 				}
 				return false
 			}

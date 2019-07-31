@@ -238,25 +238,51 @@ func (m *namespaceReaderManager) get(
 	blockStart time.Time,
 	position readerPosition,
 ) (fs.DataFileSetReader, error) {
-	key := cachedOpenReaderKey{
-		shard:      shard,
-		blockStart: xtime.ToUnixNano(blockStart),
-		position:   position,
-	}
+	// key := cachedOpenReaderKey{
+	// 	shard:      shard,
+	// 	blockStart: xtime.ToUnixNano(blockStart),
+	// 	position:   position,
+	// }
 
-	lookup, err := m.cachedReaderForKey(key)
-	if err != nil {
-		return nil, err
-	}
-	if reader := lookup.openReader; reader != nil {
-		return reader, nil // Found an open reader for the position
-	}
+	// lookup, err := m.cachedReaderForKey(key)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// if reader := lookup.openReader; reader != nil {
+	// 	return reader, nil // Found an open reader for the position
+	// }
 
 	// We have a closed reader from the cache (either a cached closed
 	// reader or newly allocated, either way need to prepare it)
-	reader := lookup.closedReader
-	// TODO(juchan): get the actual volume here.
+	// reader := lookup.closedReader
+	reader, err := m.newReaderFn(m.bytesPool, m.fsOpts)
+	if err != nil {
+		return nil, err
+	}
+	// 	// DataFiles returns a slice of all the names for all the fileset files
+	// // for a given namespace and shard combination.
+	// func DataFiles(filePathPrefix string, namespace ident.ID, shard uint32) (FileSetFilesSlice, error) {
+	// 	return filesetFiles(filesetFilesSelector{
+	// 		fileSetType:    persist.FileSetFlushType,
+	// 		contentType:    persist.FileSetDataContentType,
+	// 		filePathPrefix: filePathPrefix,
+	// 		namespace:      namespace,
+	// 		shard:          shard,
+	// 		pattern:        filesetFilePattern,
+	// 	})
+	// }
+	dataFiles, err := fs.DataFiles(m.fsOpts.FilePathPrefix(), m.namespace.ID(), shard)
+	if err != nil {
+		panic(err)
+	}
+
 	vol := 0
+	latest, ok := dataFiles.LatestVolumeForBlock(blockStart)
+	if ok {
+		vol = latest.ID.VolumeIndex
+	}
+
+	// TODO(juchan): get the actual volume here.
 	openOpts := fs.DataReaderOpenOptions{
 		Identifier: fs.FileSetFileIdentifier{
 			Namespace:   m.namespace.ID(),
