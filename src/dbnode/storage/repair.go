@@ -62,6 +62,7 @@ var (
 
 type recordFn func(namespace ident.ID, shard databaseShard, diffRes repair.MetadataComparisonResult)
 
+// TODO(rartoul): Metrics for all the scheduling logic.
 type shardRepairer struct {
 	opts     Options
 	rpopts   repair.Options
@@ -394,23 +395,8 @@ func (r *dbRepairer) run() {
 			break
 		}
 
-		// r.sleepFn(r.repairCheckInterval)
+		r.sleepFn(r.repairCheckInterval)
 
-		// now := r.nowFn()
-		// intervalStart := now.Truncate(r.repairInterval)
-
-		// If we haven't reached the offset yet, skip
-		// target := intervalStart.Add(r.repairTimeOffset + r.repairTimeJitter)
-		// if now.Before(target) {
-		// 	continue
-		// }
-
-		// If we are in the same interval, we must have already repaired, skip
-		// if intervalStart.Equal(curIntervalStart) {
-		// 	continue
-		// }
-
-		// curIntervalStart = intervalStart
 		if err := r.repairFn(); err != nil {
 			r.logger.Error("error repairing database", zap.Error(err))
 		}
