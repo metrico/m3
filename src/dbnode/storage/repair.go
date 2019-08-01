@@ -61,7 +61,6 @@ var (
 
 type recordFn func(namespace ident.ID, shard databaseShard, diffRes repair.MetadataComparisonResult)
 
-// TODO(rartoul): Metrics for all the scheduling logic.
 type shardRepairer struct {
 	opts     Options
 	rpopts   repair.Options
@@ -345,6 +344,7 @@ type dbRepairer struct {
 	logger              *zap.Logger
 	repairInterval      time.Duration
 	repairCheckInterval time.Duration
+	scope               tally.Scope
 	status              tally.Gauge
 
 	closedLock sync.Mutex
@@ -353,9 +353,11 @@ type dbRepairer struct {
 }
 
 func newDatabaseRepairer(database database, opts Options) (databaseRepairer, error) {
-	nowFn := opts.ClockOptions().NowFn()
-	scope := opts.InstrumentOptions().MetricsScope()
-	ropts := opts.RepairOptions()
+	var (
+		nowFn = opts.ClockOptions().NowFn()
+		scope = opts.InstrumentOptions().MetricsScope().SubScope("repair")
+		ropts = opts.RepairOptions()
+	)
 	if ropts == nil {
 		return nil, errNoRepairOptions
 	}
@@ -376,6 +378,7 @@ func newDatabaseRepairer(database database, opts Options) (databaseRepairer, err
 		logger:              opts.InstrumentOptions().Logger(),
 		repairInterval:      ropts.RepairInterval(),
 		repairCheckInterval: ropts.RepairCheckInterval(),
+		scope:               scope,
 		status:              scope.Gauge("repair"),
 	}
 	r.repairFn = r.Repair
@@ -456,18 +459,21 @@ func (r *dbRepairer) Repair() error {
 		repairRange.Start = repairRange.Start.Add(-blockSize)
 		repairRange.End = repairRange.End.Add(-blockSize)
 
-		allBlocksAreRepaired := true
+		numUnrepairedBlocks := 0
 		repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
 			repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 			if !ok || repairState.Status != repairSuccess {
-				allBlocksAreRepaired = false
-				return false
+				numUnrepairedBlocks++
 			}
 
 			return true
 		})
 
-		if !allBlocksAreRepaired {
+		if numUnrepairedBlocks > 0 {
+			r.scope.Tagged(map[string]string{
+				"namespace": n.ID().String(),
+			}).Gauge("num-unrepaired-blocks").Update(float64(numUnrepairedBlocks))
+
 			numBlocksRepaired := 0
 			repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
 				if numBlocksRepaired >= repairLimitPerIter {
@@ -487,7 +493,12 @@ func (r *dbRepairer) Repair() error {
 			continue
 		}
 
-		numBlocksRepaired := 0
+		var (
+			numBlocksRepaired              = 0
+			maxSecondsSinceLastBlockRepair = r.scope.Tagged(map[string]string{
+				"namespace": n.ID().String(),
+			}).Gauge("max-seconds-since-last-block-repair")
+		)
 		for {
 			if numBlocksRepaired >= repairLimitPerIter {
 				break
@@ -517,6 +528,8 @@ func (r *dbRepairer) Repair() error {
 				return true
 			})
 
+			secondsSinceLastRepair := r.nowFn().Sub(leastRecentlyRepairedBlockStartLastRepairTime).Seconds()
+			maxSecondsSinceLastBlockRepair.Update(secondsSinceLastRepair)
 			if err := r.repairNamespaceBlockstart(n, leastRecentlyRepairedBlockStart); err != nil {
 				multiErr = multiErr.Add(err)
 			}
