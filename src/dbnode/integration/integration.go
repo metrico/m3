@@ -301,8 +301,6 @@ func newDefaultBootstrappableTestSetups(
 					setup.storageOpts.RepairOptions().
 						// TODO(rartoul): Change these back to millis
 						SetRepairInterval(3 * time.Second).
-						SetRepairTimeOffset(time.Second).
-						SetRepairTimeJitter(time.Second).
 						SetRepairThrottle(time.Nanosecond).
 						SetRepairCheckInterval(time.Nanosecond).
 						SetAdminClient(adminClient).
