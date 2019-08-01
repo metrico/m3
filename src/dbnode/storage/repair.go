@@ -50,7 +50,7 @@ import (
 )
 
 const (
-	// TODO: config
+	// TODO(rartoul): Config this.
 	repairLimitPerIter = 10
 )
 
@@ -178,13 +178,10 @@ func (r shardRepairer) Repair(
 		return repair.MetadataComparisonResult{}, err
 	}
 
-	// TODO(rartoul): May want to do some custom iteration here to make pooling easier.
-	// or pool this slice?
+	// TODO(rartoul): Pool this slice.
 	metadatas := []block.ReplicaMetadata{}
 	metadataRes := metadata.Compare()
 	for _, e := range metadataRes.ChecksumDifferences.Series().Iter() {
-		// TODO(rartoul): Make sure the lifecycles here are fine (getting loaded into the series
-		// finalization and all that).
 		for blockStart, replicaMetadataBlocks := range e.Value().Metadata.Blocks() {
 			blStartTime := blockStart.ToTime()
 			blStartRange := xtime.Range{Start: blStartTime, End: blStartTime}
@@ -215,14 +212,14 @@ func (r shardRepairer) Repair(
 		return repair.MetadataComparisonResult{}, err
 	}
 
-	// TODO(rartoul): Either inject a KeyCopyPool or use SetUnsafe if we determine
-	// the lifecycle of IDs is acceptable.
-	// TODO: Need to use existing result options not create new ones to take advantage of pools.
+	// TODO(rartoul): Copying the IDs for the purposes of the map key is wasteful. Considering using
+	// SetUnsafe or marking as NoFinalize() and making the map check IsNoFinalize().
+	// TODO(rartoul): Need to use existing result options not create new ones to take advantage of pools.
 	numMismatchSeries := metadataRes.ChecksumDifferences.Series().Len()
 	results := result.NewShardResult(numMismatchSeries, result.NewOptions())
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
-		// TODO(rartoul): Handle tags in both branches.
+		// TODO(rartoul): Handle tags in both branches: https://github.com/m3db/m3/issues/1848
 		if existing, ok := results.BlockAt(id, block.StartTime()); ok {
 			if err := existing.Merge(block); err != nil {
 				return repair.MetadataComparisonResult{}, err
