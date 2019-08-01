@@ -441,33 +441,26 @@ func (r *dbRepairer) Repair() error {
 
 	for _, n := range namespaces {
 		repairRange := r.namespaceRepairTimeRange(n)
-		fmt.Println("nsRepairRange", repairRange)
 		blockSize := n.Options().RetentionOptions().BlockSize()
 
 		allBlocksAreRepaired := true
 		for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
 			repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 			if !ok || repairState.Status != repairSuccess {
-				fmt.Println("found not repaired")
-				fmt.Println("ok", ok)
-				fmt.Println("repairState.Status", repairState.Status)
 				allBlocksAreRepaired = false
 				break
 			}
 		}
 
 		if !allBlocksAreRepaired {
-			fmt.Println("not all repaired")
 			numBlocksRepaired := 0
 			for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
 				if numBlocksRepaired >= repairLimitPerIter {
-					fmt.Println("breaking")
 					break
 				}
 
 				repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 				if !ok || repairState.Status != repairSuccess {
-					fmt.Println(1)
 					repairRange := xtime.Range{Start: blockStart, End: blockStart.Add(blockSize)}
 					repairTime := r.nowFn()
 					// TODO(rartoul): Helper?
@@ -477,7 +470,6 @@ func (r *dbRepairer) Repair() error {
 					} else {
 						r.markRepairAttempt(n.ID(), blockStart, repairTime, repairSuccess)
 					}
-					fmt.Println(2)
 					numBlocksRepaired++
 				}
 			}
@@ -485,7 +477,6 @@ func (r *dbRepairer) Repair() error {
 			continue
 		}
 
-		fmt.Println("all repaired")
 		numBlocksRepaired := 0
 		for {
 			if numBlocksRepaired >= repairLimitPerIter {
@@ -523,7 +514,6 @@ func (r *dbRepairer) Repair() error {
 			} else {
 				r.markRepairAttempt(n.ID(), leastRecentlyRepairedBlockStart, repairTime, repairSuccess)
 			}
-			fmt.Println(4)
 			numBlocksRepaired++
 		}
 	}
