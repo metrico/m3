@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -334,8 +333,6 @@ type dbRepairer struct {
 	nowFn               clock.NowFn
 	logger              *zap.Logger
 	repairInterval      time.Duration
-	repairTimeOffset    time.Duration
-	repairTimeJitter    time.Duration
 	repairCheckInterval time.Duration
 	status              tally.Gauge
 
@@ -357,12 +354,6 @@ func newDatabaseRepairer(database database, opts Options) (databaseRepairer, err
 
 	shardRepairer := newShardRepairer(opts, ropts)
 
-	var jitter time.Duration
-	if repairJitter := ropts.RepairTimeJitter(); repairJitter > 0 {
-		src := rand.NewSource(nowFn().UnixNano())
-		jitter = time.Duration(float64(repairJitter) * (float64(src.Int63()) / float64(math.MaxInt64)))
-	}
-
 	r := &dbRepairer{
 		database:            database,
 		opts:                opts,
@@ -373,8 +364,6 @@ func newDatabaseRepairer(database database, opts Options) (databaseRepairer, err
 		nowFn:               nowFn,
 		logger:              opts.InstrumentOptions().Logger(),
 		repairInterval:      ropts.RepairInterval(),
-		repairTimeOffset:    ropts.RepairTimeOffset(),
-		repairTimeJitter:    jitter,
 		repairCheckInterval: ropts.RepairCheckInterval(),
 		status:              scope.Gauge("repair"),
 	}
