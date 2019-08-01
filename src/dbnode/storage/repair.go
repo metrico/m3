@@ -216,9 +216,9 @@ func (r shardRepairer) Repair(
 
 	// TODO(rartoul): Either inject a KeyCopyPool or use SetUnsafe if we determine
 	// the lifecycle of IDs is acceptable.
-	// TODO: capacity estimate?
 	// TODO: Need to use existing result options not create new ones to take advantage of pools.
-	results := result.NewShardResult(0, result.NewOptions())
+	numMismatchSeries := metadataRes.ChecksumDifferences.Series().Len()
+	results := result.NewShardResult(numMismatchSeries, result.NewOptions())
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
 		// TODO(rartoul): Handle tags in both branches.
