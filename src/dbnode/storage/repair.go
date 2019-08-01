@@ -184,15 +184,27 @@ func (r shardRepairer) Repair(
 	for _, e := range metadataRes.ChecksumDifferences.Series().Iter() {
 		// TODO(rartoul): Make sure the lifecycles here are fine (getting loaded into the series
 		// / finalization and all that).
-		for _, replicaMetadata := range e.Value().Metadata.Blocks() {
-			// TODO(rartoul): check block starts and if they're wrong emit some debug log.
-			for _, replicaMetadata := range replicaMetadata.Metadata() {
-				// Don't request blocks for self metadata.
-				if replicaMetadata.Host.ID() != session.Origin().ID() {
-					metadatas = append(metadatas, replicaMetadata)
-				}
+		for blockStart, replicaMetadataBlocks := range e.Value().Metadata.Blocks() {
+			blStartTime := blockStart.ToTime()
+			blStartRange := xtime.Range{Start: blStartTime, End: blStartTime}
+			if !tr.Contains(blStartRange) {
+				instrument.EmitAndLogInvariantViolation(r.opts.InstrumentOptions(), func(l *zap.Logger) {
+					l.With(
+						zap.Time("blockStart", blockStart.ToTime()),
+						zap.String("namespace", nsMeta.ID().String()),
+						zap.Uint32("shard", shard.ID()),
+					).Error("repair received replica metadata for unrequested blockStart")
+				})
+				continue
 			}
-			// metadatas = append(metadatas, replicaMetadata.Metadata()...)
+
+			for _, replicaMetadata := range replicaMetadataBlocks.Metadata() {
+				if replicaMetadata.Host.ID() == session.Origin().ID() {
+					// Don't request blocks for self metadata.
+					continue
+				}
+				metadatas = append(metadatas, replicaMetadata)
+			}
 		}
 	}
 
@@ -209,16 +221,14 @@ func (r shardRepairer) Repair(
 	results := result.NewShardResult(0, result.NewOptions())
 	for perSeriesReplicaIter.Next() {
 		_, id, block := perSeriesReplicaIter.Current()
+		// TODO(rartoul): Handle tags in both branches.
 		if existing, ok := results.BlockAt(id, block.StartTime()); ok {
 			if err := existing.Merge(block); err != nil {
 				return repair.MetadataComparisonResult{}, err
 			}
-			// TODO: Fill in tags somehow.
-			// results.AddBlock(id, ident.Tags{}, existing)
 		} else {
 			results.AddBlock(id, ident.Tags{}, block)
 		}
-		// TODO(rartoul): TODO.
 	}
 
 	// TODO(rartoul): Make load accept an interface that seriesIter can implement (maybe?).
