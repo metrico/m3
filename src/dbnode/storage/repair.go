@@ -460,7 +460,6 @@ func (r *dbRepairer) Repair() error {
 
 		if !allBlocksAreRepaired {
 			numBlocksRepaired := 0
-			// TODO(rartoul): May need to fix ranges to be inclusive/exclusive on the ends.
 			repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
 				if numBlocksRepaired >= repairLimitPerIter {
 					return false
