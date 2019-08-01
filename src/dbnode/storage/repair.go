@@ -441,20 +441,29 @@ func (r *dbRepairer) Repair() error {
 		repairRange := r.namespaceRepairTimeRange(n)
 		blockSize := n.Options().RetentionOptions().BlockSize()
 
+		// Iterating backwards will be inclusve on the end and exclusive on the start, but we
+		// want the opposite behavior with the existing range so subtract a blocksize on each
+		// end to make it inclusive on the original start and exclusive on the original end.
+		repairRange.Start = repairRange.Start.Add(-blockSize)
+		repairRange.End = repairRange.End.Add(-blockSize)
+
 		allBlocksAreRepaired := true
-		for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
+		repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
 			repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 			if !ok || repairState.Status != repairSuccess {
 				allBlocksAreRepaired = false
-				break
+				return false
 			}
-		}
+
+			return true
+		})
 
 		if !allBlocksAreRepaired {
 			numBlocksRepaired := 0
-			for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
+			// TODO(rartoul): May need to fix ranges to be inclusive/exclusive on the ends.
+			repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
 				if numBlocksRepaired >= repairLimitPerIter {
-					break
+					return false
 				}
 
 				repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
@@ -470,7 +479,8 @@ func (r *dbRepairer) Repair() error {
 					}
 					numBlocksRepaired++
 				}
-			}
+				return true
+			})
 
 			continue
 		}
@@ -485,7 +495,7 @@ func (r *dbRepairer) Repair() error {
 				leastRecentlyRepairedBlockStart               time.Time
 				leastRecentlyRepairedBlockStartLastRepairTime time.Time
 			)
-			for blockStart := repairRange.Start; blockStart.Before(repairRange.End); blockStart = blockStart.Add(blockSize) {
+			repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
 				repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 				if !ok {
 					// Should never happen.
@@ -495,14 +505,15 @@ func (r *dbRepairer) Repair() error {
 							zap.String("namespace", n.ID().String()),
 						).Error("missing repair state in all-blocks-are-repaired branch")
 					})
-					continue
+					return true
 				}
 
 				if leastRecentlyRepairedBlockStart.IsZero() || repairState.LastAttempt.Before(leastRecentlyRepairedBlockStartLastRepairTime) {
 					leastRecentlyRepairedBlockStart = blockStart
 					leastRecentlyRepairedBlockStartLastRepairTime = repairState.LastAttempt
 				}
-			}
+				return true
+			})
 
 			repairRange := xtime.Range{Start: leastRecentlyRepairedBlockStart, End: leastRecentlyRepairedBlockStart.Add(blockSize)}
 			repairTime := r.nowFn()
