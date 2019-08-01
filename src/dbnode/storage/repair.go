@@ -113,7 +113,7 @@ func (r shardRepairer) Repair(
 	)
 
 	metadata := repair.NewReplicaMetadataComparer(replicas, r.rpopts)
-	// ctx.RegisterFinalizer(metadata)
+	ctx.RegisterFinalizer(metadata)
 
 	// Add local metadata
 	opts := block.FetchBlocksMetadataOptions{
@@ -124,7 +124,9 @@ func (r shardRepairer) Repair(
 		accumLocalMetadata = block.NewFetchBlocksMetadataResults()
 		pageToken          PageToken
 	)
-	// ctx.RegisterCloser(accumLocalMetadata)
+	// Safe to register since by the time this function completes we won't be using the metadata
+	// for anything anymore.
+	ctx.RegisterCloser(accumLocalMetadata)
 
 	for {
 		// It's possible for FetchBlocksMetadataV2 to not return all the metadata at once even if
@@ -183,7 +185,7 @@ func (r shardRepairer) Repair(
 	metadataRes := metadata.Compare()
 	for _, e := range metadataRes.ChecksumDifferences.Series().Iter() {
 		// TODO(rartoul): Make sure the lifecycles here are fine (getting loaded into the series
-		// / finalization and all that).
+		// finalization and all that).
 		for blockStart, replicaMetadataBlocks := range e.Value().Metadata.Blocks() {
 			blStartTime := blockStart.ToTime()
 			blStartRange := xtime.Range{Start: blStartTime, End: blStartTime}
@@ -231,7 +233,6 @@ func (r shardRepairer) Repair(
 		}
 	}
 
-	// TODO(rartoul): Make load accept an interface that seriesIter can implement (maybe?).
 	if err := shard.Load(results.AllSeries()); err != nil {
 		return repair.MetadataComparisonResult{}, err
 	}
@@ -436,8 +437,6 @@ func (r *dbRepairer) Repair() error {
 	}
 
 	defer func() {
-		// TODO(rartoul): Delete this.
-		// TODO(rartoul): Logic for avoiding poison shards with backoff or something.
 		atomic.StoreInt32(&r.running, 0)
 	}()
 
@@ -477,14 +476,8 @@ func (r *dbRepairer) Repair() error {
 
 				repairState, ok := r.repairStatesByNs.repairStates(n.ID(), blockStart)
 				if !ok || repairState.Status != repairSuccess {
-					repairRange := xtime.Range{Start: blockStart, End: blockStart.Add(blockSize)}
-					repairTime := r.nowFn()
-					// TODO(rartoul): Helper?
-					if err := r.repairNamespaceWithTimeRange(n, repairRange); err != nil {
-						r.markRepairAttempt(n.ID(), blockStart, repairTime, repairFailed)
-						multiErr = multiErr.Add(r.repairNamespaceWithTimeRange(n, repairRange))
-					} else {
-						r.markRepairAttempt(n.ID(), blockStart, repairTime, repairSuccess)
+					if err := r.repairNamespaceBlockstart(n, blockStart); err != nil {
+						multiErr = multiErr.Add(err)
 					}
 					numBlocksRepaired++
 				}
@@ -524,13 +517,8 @@ func (r *dbRepairer) Repair() error {
 				return true
 			})
 
-			repairRange := xtime.Range{Start: leastRecentlyRepairedBlockStart, End: leastRecentlyRepairedBlockStart.Add(blockSize)}
-			repairTime := r.nowFn()
-			if err := r.repairNamespaceWithTimeRange(n, repairRange); err != nil {
-				r.markRepairAttempt(n.ID(), leastRecentlyRepairedBlockStart, repairTime, repairFailed)
-				multiErr = multiErr.Add(r.repairNamespaceWithTimeRange(n, repairRange))
-			} else {
-				r.markRepairAttempt(n.ID(), leastRecentlyRepairedBlockStart, repairTime, repairSuccess)
+			if err := r.repairNamespaceBlockstart(n, leastRecentlyRepairedBlockStart); err != nil {
+				multiErr = multiErr.Add(err)
 			}
 			numBlocksRepaired++
 		}
@@ -545,6 +533,21 @@ func (r *dbRepairer) Report() {
 	} else {
 		r.status.Update(0)
 	}
+}
+
+func (r *dbRepairer) repairNamespaceBlockstart(n databaseNamespace, blockStart time.Time) error {
+	var (
+		blockSize   = n.Options().RetentionOptions().BlockSize()
+		repairRange = xtime.Range{Start: blockStart, End: blockStart.Add(blockSize)}
+		repairTime  = r.nowFn()
+	)
+	if err := r.repairNamespaceWithTimeRange(n, repairRange); err != nil {
+		r.markRepairAttempt(n.ID(), blockStart, repairTime, repairFailed)
+		return err
+	}
+
+	r.markRepairAttempt(n.ID(), blockStart, repairTime, repairSuccess)
+	return nil
 }
 
 func (r *dbRepairer) repairNamespaceWithTimeRange(n databaseNamespace, tr xtime.Range) error {
