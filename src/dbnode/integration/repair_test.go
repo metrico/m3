@@ -137,7 +137,9 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 		SetBufferFuture(2 * time.Minute)
 	nsOpts := namespace.NewOptions().
 		SetRepairEnabled(true).
-		SetColdWritesEnabled(true).
+		// Explicitly ensure that the repair feature works even if cold writes is disabled
+		// at the namespace level.
+		SetColdWritesEnabled(false).
 		SetRetentionOptions(retentionOpts)
 	namesp, err := namespace.NewMetadata(testNamespaces[0], nsOpts)
 	require.NoError(t, err)

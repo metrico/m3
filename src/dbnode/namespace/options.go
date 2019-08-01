@@ -53,7 +53,6 @@ var (
 	errIndexBlockSizePositive                       = errors.New("index block size must positive")
 	errIndexBlockSizeTooLarge                       = errors.New("index block size needs to be <= namespace retention period")
 	errIndexBlockSizeMustBeAMultipleOfDataBlockSize = errors.New("index block size must be a multiple of data block size")
-	errRepairRequiresColdWrites                     = errors.New("repair feature requires cold writes to be enabled")
 )
 
 type options struct {
@@ -111,9 +110,6 @@ func (o *options) Validate() error {
 	}
 	if indexBlockSize%dataBlockSize != 0 {
 		return errIndexBlockSizeMustBeAMultipleOfDataBlockSize
-	}
-	if o.repairEnabled && !o.coldWritesEnabled {
-		return errRepairRequiresColdWrites
 	}
 	return nil
 }
