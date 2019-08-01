@@ -1040,9 +1040,6 @@ func (r *coldFlushReuseableResources) reset() {
 func (n *dbNamespace) ColdFlush(
 	flushPersist persist.FlushPreparer,
 ) error {
-	// fmt.Println("cold flush start")
-	// defer fmt.Println("cold flush complete")
-
 	// NB(rartoul): This value can be used for emitting metrics, but should not be used
 	// for business logic.
 	callStart := n.nowFn()
@@ -1222,7 +1219,6 @@ func (n *dbNamespace) Repair(
 		return nil
 	}
 
-	// fmt.Println("REPAIRING TIME RANGE", tr)
 	var (
 		wg                    sync.WaitGroup
 		mutex                 sync.Mutex

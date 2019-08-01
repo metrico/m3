@@ -86,7 +86,6 @@ func (r Reader) readersWithBlocksMapAndBuffer(
 	seriesBuffer databaseBuffer,
 	nsCtx namespace.Context,
 ) ([][]xio.BlockReader, error) {
-	fmt.Println("IN READERS WITH BLOCKS MP AND BUFFER")
 	// Two-dimensional slice such that the first dimension is unique by blockstart
 	// and the second dimension is blocks of data for that blockstart (not necessarily
 	// in chronological order).
@@ -147,11 +146,9 @@ func (r Reader) readersWithBlocksMapAndBuffer(
 				// will defer to disk read
 				streamedBlock, err := block.Stream(ctx)
 				if err != nil {
-					fmt.Println("error reading from mem blocks", err)
 					return nil, err
 				}
 				if streamedBlock.IsNotEmpty() {
-					fmt.Println("appending from mem")
 					resultsBlock = append(resultsBlock, streamedBlock)
 					// NB(r): Mark this block as read now
 					block.SetLastReadTime(now)
@@ -172,17 +169,14 @@ func (r Reader) readersWithBlocksMapAndBuffer(
 				// Try to stream from disk
 				isRetrievable, err := r.retriever.IsBlockRetrievable(blockAt)
 				if err != nil {
-					fmt.Println("error checking if is retrievable", err)
 					return nil, err
 				}
 				if isRetrievable {
 					streamedBlock, err := r.retriever.Stream(ctx, r.id, blockAt, r.onRetrieve, nsCtx)
 					if err != nil {
-						fmt.Println("error streaming from disk", err)
 						return nil, err
 					}
 					if streamedBlock.IsNotEmpty() {
-						fmt.Println("appending from disk")
 						resultsBlock = append(resultsBlock, streamedBlock)
 					}
 				}
@@ -192,13 +186,11 @@ func (r Reader) readersWithBlocksMapAndBuffer(
 		if seriesBuffer != nil {
 			bufferResults, err := seriesBuffer.ReadEncoded(ctx, blockAt, blockAt.Add(size), nsCtx)
 			if err != nil {
-				fmt.Println("error reading from buffer", err)
 				return nil, err
 			}
 			// Multiple block results may be returned here (for the same block
 			// start) - one for warm writes and another for cold writes.
 			for _, bufferRes := range bufferResults {
-				fmt.Println("appending from buffer", len(bufferRes))
 				resultsBlock = append(resultsBlock, bufferRes...)
 			}
 		}
@@ -228,7 +220,6 @@ func (r Reader) fetchBlocksWithBlocksMapAndBuffer(
 	seriesBuffer databaseBuffer,
 	nsCtx namespace.Context,
 ) ([]block.FetchBlockResult, error) {
-	fmt.Println("IN FETCH BLOCKS")
 	var (
 		// Two-dimensional slice (each block.FetchBlockResult has a []xio.BlockReader internally)
 		// such that the first dimension is unique by blockstart and the second dimension is blocks

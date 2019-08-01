@@ -98,12 +98,9 @@ func openAndServe(
 	doneCh <-chan struct{},
 ) error {
 	logger := opts.InstrumentOptions().Logger()
-	fmt.Println("opening")
 	if err := db.Open(); err != nil {
-		fmt.Println("could not open")
 		return fmt.Errorf("could not open database: %v", err)
 	}
-	fmt.Println("done opening")
 
 	contextPool := opts.ContextPool()
 	ttopts := tchannelthrift.NewOptions()
@@ -144,7 +141,6 @@ func openAndServe(
 		}()
 	}
 
-	fmt.Println("starting bootstrap")
 	if err := db.Bootstrap(); err != nil {
 		return fmt.Errorf("bootstrapping database encountered error: %v", err)
 	}

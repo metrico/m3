@@ -364,10 +364,10 @@ func TestRepairerRepairTimes(t *testing.T) {
 		bs time.Time
 		rs repairState
 	}{
-		{time.Unix(14400, 0), repairState{repairFailed, 2}},
-		{time.Unix(28800, 0), repairState{repairFailed, 3}},
-		{time.Unix(36000, 0), repairState{repairNotStarted, 0}},
-		{time.Unix(43200, 0), repairState{repairSuccess, 1}},
+		{time.Unix(14400, 0), repairState{Status: repairFailed}},
+		{time.Unix(28800, 0), repairState{Statis: repairFailed}},
+		{time.Unix(36000, 0), repairState{Statis: repairNotStarted}},
+		{time.Unix(43200, 0), repairState{Status: repairSuccess}},
 	}
 	repairer, err := newDatabaseRepairer(database, opts)
 	require.NoError(t, err)

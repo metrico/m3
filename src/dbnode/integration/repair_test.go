@@ -186,7 +186,6 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 	require.True(t, waitUntil(func() bool {
 		for _, setup := range setups {
 			if err := checkFlushedDataFiles(setup.shardSet, setup.storageOpts, namesp.ID(), allData); err != nil {
-				// fmt.Println(err)
 				// Increment the time each time it fails to make sure background processes are able to proceed.
 				for _, s := range setups {
 					s.setNowFn(s.getNowFn().Add(time.Second))
