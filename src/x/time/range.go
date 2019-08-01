@@ -135,6 +135,46 @@ func (r Range) Subtract(other Range) []Range {
 	return res
 }
 
+// type RangeIter struct {
+// 	r        Range
+// 	stepSize time.Duration
+// 	curr     time.Time
+// }
+
+// func (r *RangeIter) Next() bool {
+// 	next := r.curr.Add(r.stepSize)
+// 	if next.After(r.End) ||
+// 		next.Equal(r.End) {
+// 		return false
+// 	}
+
+// 	r.curr = next
+// }
+
+// func (r *RangeIter) Current() time.Time {
+// 	return r.curr
+// }
+
+// IterateForwards iterates through a time range by step size in the
+// forwards direction.
+func (r Range) IterateForwards(stepSize time.Duration, f func(t time.Time) bool) {
+	for t := r.Start; t.Before(r.End); t = t.Add(stepSize) {
+		if shouldContinue := f(t); !shouldContinue {
+			break
+		}
+	}
+}
+
+// IterateBackwards iterates through a time range by step size in the
+// backwards direction.
+func (r Range) IterateBackwards(stepSize time.Duration, f func(t time.Time) bool) {
+	for t := r.End; t.After(r.Start); t = t.Add(-stepSize) {
+		if shouldContinue := f(t); !shouldContinue {
+			break
+		}
+	}
+}
+
 // String returns the string representation of the range.
 func (r Range) String() string {
 	return fmt.Sprintf("(%v,%v)", r.Start, r.End)

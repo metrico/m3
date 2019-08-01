@@ -373,8 +373,6 @@ func newDatabaseRepairer(database database, opts Options) (databaseRepairer, err
 }
 
 func (r *dbRepairer) run() {
-	// var curIntervalStart time.Time
-
 	for {
 		r.closedLock.Lock()
 		closed := r.closed
