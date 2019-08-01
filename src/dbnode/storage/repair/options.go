@@ -41,7 +41,6 @@ const (
 var (
 	errNoAdminClient                           = errors.New("no admin client in repair options")
 	errInvalidRepairInterval                   = errors.New("invalid repair interval in repair options")
-	errTimeOffsetOrJitterTooBig                = errors.New("repair time offset plus jitter should be no more than repair interval")
 	errInvalidRepairCheckInterval              = errors.New("invalid repair check interval in repair options")
 	errRepairCheckIntervalTooBig               = errors.New("repair check interval too big in repair options")
 	errInvalidRepairThrottle                   = errors.New("invalid repair throttle in repair options")
