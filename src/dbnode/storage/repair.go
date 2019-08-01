@@ -540,30 +540,11 @@ func (r *dbRepairer) Report() {
 }
 
 func (r *dbRepairer) repairNamespaceWithTimeRange(n databaseNamespace, tr xtime.Range) error {
-	var (
-		// rtopts    = n.Options().RetentionOptions()
-		// blockSize = rtopts.BlockSize()
-		err error
-	)
-
-	// repairStart := r.nowFn()
-	if err = n.Repair(r.shardRepairer, tr); err != nil {
-		err = fmt.Errorf("namespace %s failed to repair time range %v: %v", n.ID().String(), tr, err)
+	if err := n.Repair(r.shardRepairer, tr); err != nil {
+		return fmt.Errorf("namespace %s failed to repair time range %v: %v", n.ID().String(), tr, err)
 	}
 
-	// Update repair state.
-	// for t := tr.Start; t.Before(tr.End); t = t.Add(blockSize) {
-	// 	repairState, _ := r.repairStatesByNs.repairStates(n.ID(), t)
-	// 	if err == nil {
-	// 		repairState.Status = repairSuccess
-	// 	} else {
-	// 		repairState.Status = repairFailed
-	// 	}
-	// 	repairState.LastAttempt = repairStart
-	// 	r.repairStatesByNs.setRepairState(n.ID(), t, repairState)
-	// }
-
-	return err
+	return nil
 }
 
 func (r *dbRepairer) markRepairAttempt(
