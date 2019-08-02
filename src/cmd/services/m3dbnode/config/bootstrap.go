@@ -119,9 +119,9 @@ func (bsc BootstrapConfiguration) New(
 	}
 
 	var (
-		bs  bootstrap.BootstrapperProvider
-		err error
-	fsOpts = opts.CommitLogOptions().FilesystemOptions()
+		bs     bootstrap.BootstrapperProvider
+		err    error
+		fsOpts = opts.CommitLogOptions().FilesystemOptions()
 	)
 	// Start from the end of the list because the bootstrappers are ordered by precedence in descending order.
 	for i := len(bsc.Bootstrappers) - 1; i >= 0; i-- {
