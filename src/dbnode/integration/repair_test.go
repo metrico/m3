@@ -29,6 +29,7 @@ import (
 	"github.com/m3db/m3/src/dbnode/integration/generate"
 	"github.com/m3db/m3/src/dbnode/namespace"
 	"github.com/m3db/m3/src/dbnode/retention"
+	"github.com/m3db/m3/src/x/ident"
 	xtest "github.com/m3db/m3/src/x/test"
 	xtime "github.com/m3db/m3/src/x/time"
 
@@ -42,11 +43,12 @@ func TestRepairDisjointSeries(t *testing.T) {
 		node2Data generate.SeriesBlocksByStart,
 		allData generate.SeriesBlocksByStart,
 	) {
+		currBlockStart := now.Truncate(blockSize)
 		node0Data = generate.BlocksByStart([]generate.BlockConfig{
-			{IDs: []string{"foo"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
+			{IDs: []string{"foo"}, NumPoints: 90, Start: currBlockStart.Add(-4 * blockSize)},
 		})
 		node1Data = generate.BlocksByStart([]generate.BlockConfig{
-			{IDs: []string{"bar"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
+			{IDs: []string{"bar"}, NumPoints: 90, Start: currBlockStart.Add(-4 * blockSize)},
 		})
 
 		allData = make(map[xtime.UnixNano]generate.SeriesBlock)
@@ -69,7 +71,7 @@ func TestRepairDisjointSeries(t *testing.T) {
 		return node0Data, node1Data, node2Data, allData
 	}
 
-	testRepair(t, genRepairData)
+	testRepair(t, genRepairData, testRepairOptions{})
 }
 
 func TestRepairMergeSeries(t *testing.T) {
@@ -79,10 +81,11 @@ func TestRepairMergeSeries(t *testing.T) {
 		node2Data generate.SeriesBlocksByStart,
 		allData generate.SeriesBlocksByStart,
 	) {
+		currBlockStart := now.Truncate(blockSize)
 		allData = generate.BlocksByStart([]generate.BlockConfig{
-			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-4 * blockSize)},
-			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-3 * blockSize)}})
-		// {IDs: []string{"foo", "baz"}, NumPoints: 90, Start: now.Add(-2 * blockSize)}})
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: currBlockStart.Add(-4 * blockSize)},
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: currBlockStart.Add(-3 * blockSize)},
+			{IDs: []string{"foo", "baz"}, NumPoints: 90, Start: currBlockStart.Add(-2 * blockSize)}})
 		node0Data = make(map[xtime.UnixNano]generate.SeriesBlock)
 		node1Data = make(map[xtime.UnixNano]generate.SeriesBlock)
 
@@ -111,7 +114,40 @@ func TestRepairMergeSeries(t *testing.T) {
 		return node0Data, node1Data, node2Data, allData
 	}
 
-	testRepair(t, genRepairData)
+	testRepair(t, genRepairData, testRepairOptions{})
+}
+
+func TestRepairDoesNotRepairCurrentBlock(t *testing.T) {
+	genRepairData := func(now time.Time, blockSize time.Duration) (
+		node0Data generate.SeriesBlocksByStart,
+		node1Data generate.SeriesBlocksByStart,
+		node2Data generate.SeriesBlocksByStart,
+		allData generate.SeriesBlocksByStart,
+	) {
+		currBlockStart := now.Truncate(blockSize)
+		node0Data = generate.BlocksByStart([]generate.BlockConfig{
+			// Write in previous block should be repaired.
+			{IDs: []string{"prevBlock1", "prevBlock2"}, NumPoints: 1, Start: currBlockStart.Add(-blockSize)},
+			// Write in current block, should not be repaired.
+			{IDs: []string{"currBlock1", "currBlock2"}, NumPoints: 1, Start: currBlockStart},
+		})
+
+		allData = make(map[xtime.UnixNano]generate.SeriesBlock)
+		for start, data := range node0Data {
+			if !start.ToTime().Equal(currBlockStart) {
+				allData[start] = data
+			}
+		}
+		require.Equal(t, 1, len(allData))
+
+		return node0Data, node1Data, node2Data, allData
+	}
+
+	currBlockSeries := []ident.ID{ident.StringID("currBlock1"), ident.StringID("currBlock2")}
+	testRepairOpts := testRepairOptions{
+		node1ShouldNotContainSeries: currBlockSeries,
+		node2ShouldNotContainSeries: currBlockSeries}
+	testRepair(t, genRepairData, testRepairOpts)
 }
 
 type genRepairDatafn func(
@@ -123,7 +159,17 @@ type genRepairDatafn func(
 	node2Data generate.SeriesBlocksByStart,
 	allData generate.SeriesBlocksByStart)
 
-func testRepair(t *testing.T, genRepairData genRepairDatafn) {
+type testRepairOptions struct {
+	node0ShouldNotContainSeries []ident.ID
+	node1ShouldNotContainSeries []ident.ID
+	node2ShouldNotContainSeries []ident.ID
+}
+
+func testRepair(
+	t *testing.T,
+	genRepairData genRepairDatafn,
+	testRepairOpts testRepairOptions,
+) {
 	if testing.Short() {
 		t.SkipNow()
 	}
@@ -154,9 +200,12 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 	setups, closeFn := newDefaultBootstrappableTestSetups(t, opts, setupOpts)
 	defer closeFn()
 
-	// Write test data alternating missing data for left/right nodes
-	now := setups[0].getNowFn()
+	// Ensure that the current time is set such that the previous block is flushable.
 	blockSize := retentionOpts.BlockSize()
+	now := setups[0].getNowFn().Truncate(blockSize).Add(retentionOpts.BufferPast()).Add(time.Second)
+	for _, setup := range setups {
+		setup.setNowFn(now)
+	}
 
 	node0Data, node1Data, node2Data, allData := genRepairData(now, blockSize)
 	if node0Data != nil {
@@ -190,7 +239,7 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 			if err := checkFlushedDataFiles(setup.shardSet, setup.storageOpts, namesp.ID(), allData); err != nil {
 				// Increment the time each time it fails to make sure background processes are able to proceed.
 				for _, s := range setups {
-					s.setNowFn(s.getNowFn().Add(time.Second))
+					s.setNowFn(s.getNowFn().Add(time.Millisecond))
 				}
 				return false
 			}
@@ -202,4 +251,20 @@ func testRepair(t *testing.T, genRepairData genRepairDatafn) {
 	verifySeriesMaps(t, setups[0], namesp.ID(), allData)
 	verifySeriesMaps(t, setups[1], namesp.ID(), allData)
 	verifySeriesMaps(t, setups[2], namesp.ID(), allData)
+
+	for _, seriesID := range testRepairOpts.node0ShouldNotContainSeries {
+		contains, err := containsSeries(setups[0], namesp.ID(), seriesID, now.Add(-retentionOpts.RetentionPeriod()), now)
+		require.NoError(t, err)
+		require.False(t, contains)
+	}
+	for _, seriesID := range testRepairOpts.node1ShouldNotContainSeries {
+		contains, err := containsSeries(setups[1], namesp.ID(), seriesID, now.Add(-retentionOpts.RetentionPeriod()), now)
+		require.NoError(t, err)
+		require.False(t, contains)
+	}
+	for _, seriesID := range testRepairOpts.node2ShouldNotContainSeries {
+		contains, err := containsSeries(setups[2], namesp.ID(), seriesID, now.Add(-retentionOpts.RetentionPeriod()), now)
+		require.NoError(t, err)
+		require.False(t, contains)
+	}
 }

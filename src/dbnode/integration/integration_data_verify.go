@@ -213,6 +213,18 @@ func verifySeriesMapForRange(
 	return true
 }
 
+func containsSeries(ts *testSetup, namespace, seriesID ident.ID, start, end time.Time) (bool, error) {
+	req := rpc.NewFetchRequest()
+	req.NameSpace = namespace.String()
+	req.ID = seriesID.String()
+	req.RangeStart = xtime.ToNormalizedTime(start, time.Second)
+	req.RangeEnd = xtime.ToNormalizedTime(end, time.Second)
+	req.ResultTimeType = rpc.TimeType_UNIX_SECONDS
+	fetched, err := ts.fetch(req)
+	fmt.Println(fetched)
+	return len(fetched) != 0, err
+}
+
 func writeVerifyDebugOutput(
 	t *testing.T, filePath string, start, end time.Time, series generate.SeriesBlock) bool {
 	w, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, os.ModeAppend)

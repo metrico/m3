@@ -33,6 +33,7 @@ import (
 	"github.com/m3db/m3/src/dbnode/client"
 	"github.com/m3db/m3/src/dbnode/clock"
 	"github.com/m3db/m3/src/dbnode/namespace"
+	"github.com/m3db/m3/src/dbnode/retention"
 	"github.com/m3db/m3/src/dbnode/storage/block"
 	"github.com/m3db/m3/src/dbnode/storage/bootstrap/result"
 	"github.com/m3db/m3/src/dbnode/storage/repair"
@@ -396,13 +397,12 @@ func (r *dbRepairer) run() {
 
 func (r *dbRepairer) namespaceRepairTimeRange(ns databaseNamespace) xtime.Range {
 	var (
-		now       = r.nowFn()
-		rtopts    = ns.Options().RetentionOptions()
-		blockSize = rtopts.BlockSize()
-		start     = now.Add(-rtopts.RetentionPeriod()).Truncate(blockSize)
-		end       = now.Add(-rtopts.BufferPast()).Truncate(blockSize)
+		now    = r.nowFn()
+		rtopts = ns.Options().RetentionOptions()
 	)
-	return xtime.Range{Start: start, End: end}
+	return xtime.Range{
+		Start: retention.FlushTimeStart(rtopts, now),
+		End:   retention.FlushTimeEnd(rtopts, now)}
 }
 
 func (r *dbRepairer) Start() {
@@ -439,11 +439,9 @@ func (r *dbRepairer) Repair() error {
 		repairRange := r.namespaceRepairTimeRange(n)
 		blockSize := n.Options().RetentionOptions().BlockSize()
 
-		// Iterating backwards will be inclusve on the end and exclusive on the start, but we
-		// want the opposite behavior with the existing range so subtract a blocksize on each
-		// end to make it inclusive on the original start and exclusive on the original end.
+		// Iterating backwards will be exclusive on the start, but we want to be inclusive on the
+		// start so subtract a blocksize.
 		repairRange.Start = repairRange.Start.Add(-blockSize)
-		repairRange.End = repairRange.End.Add(-blockSize)
 
 		numUnrepairedBlocks := 0
 		repairRange.IterateBackwards(blockSize, func(blockStart time.Time) bool {
