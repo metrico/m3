@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/m3db/m3/src/dbnode/client"
+	"github.com/m3db/m3/src/dbnode/storage/bootstrap/result"
 	"github.com/m3db/m3/src/dbnode/topology"
 )
 
 const (
 	defaultRepairConsistencyLevel           = topology.ReadConsistencyLevelMajority
-	defaultRepairInterval                   = 2 * time.Hour
 	defaultRepairCheckInterval              = time.Minute
 	defaultRepairThrottle                   = 90 * time.Second
 	defaultRepairShardConcurrency           = 1
@@ -40,11 +40,10 @@ const (
 
 var (
 	errNoAdminClient                           = errors.New("no admin client in repair options")
-	errInvalidRepairInterval                   = errors.New("invalid repair interval in repair options")
 	errInvalidRepairCheckInterval              = errors.New("invalid repair check interval in repair options")
-	errRepairCheckIntervalTooBig               = errors.New("repair check interval too big in repair options")
 	errInvalidRepairThrottle                   = errors.New("invalid repair throttle in repair options")
 	errNoHostBlockMetadataSlicePool            = errors.New("no host block metadata pool in repair options")
+	errNoResultOptions                         = errors.New("no result options in repair options")
 	errInvalidDebugShadowComparisonsPercentage = errors.New("debug shadow comparisons percentage must be between 0 and 1")
 )
 
@@ -52,10 +51,10 @@ type options struct {
 	adminClient                      client.AdminClient
 	repairConsistencyLevel           topology.ReadConsistencyLevel
 	repairShardConcurrency           int
-	repairInterval                   time.Duration
 	repairCheckInterval              time.Duration
 	repairThrottle                   time.Duration
 	hostBlockMetadataSlicePool       HostBlockMetadataSlicePool
+	resultOptions                    result.Options
 	debugShadowComparisonsEnabled    bool
 	debugShadowComparisonsPercentage float64
 }
@@ -65,10 +64,10 @@ func NewOptions() Options {
 	return &options{
 		repairConsistencyLevel:           defaultRepairConsistencyLevel,
 		repairShardConcurrency:           defaultRepairShardConcurrency,
-		repairInterval:                   defaultRepairInterval,
 		repairCheckInterval:              defaultRepairCheckInterval,
 		repairThrottle:                   defaultRepairThrottle,
 		hostBlockMetadataSlicePool:       NewHostBlockMetadataSlicePool(nil, 0),
+		resultOptions:                    result.NewOptions(),
 		debugShadowComparisonsEnabled:    defaultDebugShadowComparisonsEnabled,
 		debugShadowComparisonsPercentage: defaultDebugShadowComparisonsPercentage,
 	}
@@ -104,16 +103,6 @@ func (o *options) RepairShardConcurrency() int {
 	return o.repairShardConcurrency
 }
 
-func (o *options) SetRepairInterval(value time.Duration) Options {
-	opts := *o
-	opts.repairInterval = value
-	return &opts
-}
-
-func (o *options) RepairInterval() time.Duration {
-	return o.repairInterval
-}
-
 func (o *options) SetRepairCheckInterval(value time.Duration) Options {
 	opts := *o
 	opts.repairCheckInterval = value
@@ -144,6 +133,16 @@ func (o *options) HostBlockMetadataSlicePool() HostBlockMetadataSlicePool {
 	return o.hostBlockMetadataSlicePool
 }
 
+func (o *options) SetResultOptions(value result.Options) Options {
+	opts := *o
+	opts.resultOptions = value
+	return &opts
+}
+
+func (o *options) ResultOptions() result.Options {
+	return o.resultOptions
+}
+
 func (o *options) SetDebugShadowComparisonsEnabled(value bool) Options {
 	opts := *o
 	opts.debugShadowComparisonsEnabled = value
@@ -168,20 +167,17 @@ func (o *options) Validate() error {
 	if o.adminClient == nil {
 		return errNoAdminClient
 	}
-	if o.repairInterval < 0 {
-		return errInvalidRepairInterval
-	}
 	if o.repairCheckInterval < 0 {
 		return errInvalidRepairCheckInterval
-	}
-	if o.repairCheckInterval > o.repairInterval {
-		return errRepairCheckIntervalTooBig
 	}
 	if o.repairThrottle < 0 {
 		return errInvalidRepairThrottle
 	}
 	if o.hostBlockMetadataSlicePool == nil {
 		return errNoHostBlockMetadataSlicePool
+	}
+	if o.resultOptions == nil {
+		return errNoResultOptions
 	}
 	if o.debugShadowComparisonsPercentage > 1.0 ||
 		o.debugShadowComparisonsPercentage < 0 {

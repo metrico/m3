@@ -25,6 +25,7 @@ import (
 
 	"github.com/m3db/m3/src/dbnode/client"
 	"github.com/m3db/m3/src/dbnode/storage/block"
+	"github.com/m3db/m3/src/dbnode/storage/bootstrap/result"
 	"github.com/m3db/m3/src/dbnode/topology"
 	"github.com/m3db/m3/src/x/ident"
 	xtime "github.com/m3db/m3/src/x/time"
@@ -163,12 +164,6 @@ type Options interface {
 	// RepairShardConcurrency returns the concurrency in which to repair shards with.
 	RepairShardConcurrency() int
 
-	// SetRepairInterval sets the repair interval.
-	SetRepairInterval(value time.Duration) Options
-
-	// RepairInterval returns the repair interval.
-	RepairInterval() time.Duration
-
 	// SetRepairCheckInterval sets the repair check interval.
 	SetRepairCheckInterval(value time.Duration) Options
 
@@ -186,6 +181,12 @@ type Options interface {
 
 	// HostBlockMetadataSlicePool returns the hostBlockMetadataSlice pool.
 	HostBlockMetadataSlicePool() HostBlockMetadataSlicePool
+
+	// SetResultOptions sets the result options.
+	SetResultOptions(value result.Options) Options
+
+	// ResultOptions returns the result options.
+	ResultOptions() result.Options
 
 	// SetDebugShadowComparisonsEnabled sets whether debug shadow comparisons are enabled.
 	SetDebugShadowComparisonsEnabled(value bool) Options
